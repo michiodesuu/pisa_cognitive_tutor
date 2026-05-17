@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Data (do not commit raw PDFs or student data)
+data/raw_pdfs/*.pdf
+data/chat_logs/*.db
+data/chat_logs/*.csv
+data/vector_db/
+data/processed_jsonl/*.jsonl
+models/
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+
+# Secrets
+.env
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+.vscode/*
+
+# Node / JavaScript
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Next / build artifacts (root)
+.next/
+
+# Python caches and test artifacts
+.mypy_cache/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtualenvs
+venv/
+env/
+ENV/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+
+# Secrets and env files
+.env*
+.env.*.local
+.envrc
+credentials.json
+*.pem
+*.key
+*.crt
+
+# Databases and local data
+*.sqlite3
+*.db
+
+# Logs, caches, temp
+logs/
+tmp/
+.cache/
+pip-wheel-metadata/
+
+# Compiled/native
+*.so
+*.dylib
+*.dll
+
+# Docker / local overrides
+docker-compose.override.yml
+.env.docker
+
+# Large files note: use Git LFS for models, vectors, and PDFs

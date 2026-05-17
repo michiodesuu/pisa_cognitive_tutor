@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --brand: #0c84e8; }
+
+html, body { height: 100%; margin: 0; }
+
+/* Markdown prose inside chat bubbles */
+.prose-chat p { margin: 0 0 0.5rem 0; }
+.prose-chat p:last-child { margin-bottom: 0; }
+.prose-chat code {
+  background: rgba(0,0,0,0.08);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85em;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }

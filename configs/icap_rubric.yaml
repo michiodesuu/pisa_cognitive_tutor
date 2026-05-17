@@ -1,0 +1,111 @@
+# ICAP Framework Cognitive Dimensions Scoring Rubric
+# Used by the offline evaluator to score student responses C1-C8
+# Score scale: 0=absent, 1=partial/surface, 2=full/deep, NA=not applicable
+
+icap_hierarchy:
+  I: Interactive    # highest
+  C: Constructive
+  A: Active
+  P: Passive        # lowest
+
+scoring_scale:
+  0: "Absent or incorrect — no evidence of this dimension"
+  1: "Partial — surface-level or incomplete engagement with this dimension"
+  2: "Full — clear, correct, and deep engagement with this dimension"
+  NA: "Not applicable — this dimension cannot be assessed from this response"
+
+dimensions:
+  C1:
+    name: "Content Knowledge Accuracy"
+    description: "Does the student correctly recall or state factual content related to the PISA question?"
+    icap_level: "P-A"
+    rubric:
+      0: "States incorrect facts or shows no content knowledge"
+      1: "States partially correct facts; some errors present"
+      2: "All stated facts are correct and relevant"
+
+  C2:
+    name: "Concept Understanding Depth"
+    description: "Does the student demonstrate understanding of the underlying scientific concept, not just surface recall?"
+    icap_level: "A-C"
+    rubric:
+      0: "No conceptual understanding evident; rote recitation only"
+      1: "Partial understanding; concept mentioned but not unpacked"
+      2: "Clear, accurate explanation of the concept in own words"
+
+  C3:
+    name: "Data Interpretation & Quantitative Reasoning"
+    description: "Can the student read, interpret, and reason from data, graphs, or tables in the PISA question?"
+    icap_level: "A-C"
+    rubric:
+      0: "Ignores or misreads data; no quantitative engagement"
+      1: "Reads simple values but misinterprets trends or relationships"
+      2: "Correctly interprets data and draws valid quantitative conclusions"
+
+  C4:
+    name: "Causal / Mechanistic Reasoning"
+    description: "Does the student explain WHY or HOW (cause-effect, mechanism), not just WHAT?"
+    icap_level: "C"
+    rubric:
+      0: "No causal language; describes without explaining mechanism"
+      1: "Causal link attempted but logically incomplete or partially wrong"
+      2: "Correct and complete mechanistic explanation with clear causality"
+
+  C5:
+    name: "Evidence Evaluation & Scientific Argumentation"
+    description: "Can the student evaluate evidence quality, distinguish observation from inference, or construct a claim-evidence-reasoning argument?"
+    icap_level: "C"
+    rubric:
+      0: "No distinction between evidence and claim; accepts all stated facts"
+      1: "Identifies some evidence but reasoning chain is incomplete"
+      2: "Clear claim-evidence-reasoning structure; critically evaluates evidence"
+
+  C6:
+    name: "Model-Based / Analogical Thinking"
+    description: "Does the student use models, analogies, or abstract representations to explain phenomena?"
+    icap_level: "C-I"
+    rubric:
+      0: "No use of models or analogies"
+      1: "Attempts a model or analogy but it is imprecise or partially wrong"
+      2: "Correct and illuminating model or analogy that extends understanding"
+
+  C7:
+    name: "Systems Thinking & Transfer"
+    description: "Can the student connect concepts across domains, recognize emergent behavior, or transfer knowledge to a novel context?"
+    icap_level: "C-I"
+    rubric:
+      0: "Response is isolated; no cross-domain connection or transfer"
+      1: "Attempts transfer but with significant gaps or errors"
+      2: "Correctly connects concepts across domains or transfers to new context"
+
+  C8:
+    name: "Metacognitive Reflection"
+    description: "Does the student reflect on their own reasoning process, acknowledge uncertainty, or identify what they still need to learn?"
+    icap_level: "I"
+    rubric:
+      0: "No self-reflection; states answers with false certainty"
+      1: "Some hedging language but no genuine reflection on reasoning"
+      2: "Explicitly reflects on own thinking, uncertainty, or knowledge gaps"
+
+# Dimension groupings by ICAP level for profiling
+icap_dimension_map:
+  Passive: []           # Passive behavior leaves no text to analyze
+  Active: [C1, C2, C3]
+  Constructive: [C4, C5, C6]
+  Interactive: [C7, C8]
+
+# Forbidden words in the Chatbot — if any appear, test fails
+forbidden_chatbot_words:
+  - "Correct"
+  - "Incorrect"
+  - "Wrong"
+  - "Right answer"
+  - "Well done"
+  - "Good job"
+  - "Try again"
+  - "That is right"
+  - "That is wrong"
+  - "You got it"
+  - "ถูกต้อง"      # Thai: correct
+  - "ผิด"          # Thai: wrong
+  - "เก่งมาก"      # Thai: very good

@@ -1,0 +1,8 @@
+[project]
+enable_telemetry = false
+[features]
+prompt_playground = false
+[UI]
+name = "PISA Cognitive Tutor"
+description = "AI Socratic Science Tutor for Cognitive Research"
+hide_cta = true

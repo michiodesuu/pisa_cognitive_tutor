@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════════════
+# PISA Cognitive Tutor - Python Dependencies
+# ═══════════════════════════════════════════════════════════════════
+# Install: pip install -r requirements.txt --break-system-packages
+# CUDA env: ensure torch is installed with your CUDA version first:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Core ML / VLM ─────────────────────────────────────────────────
+torch>=2.2.0
+transformers>=4.45.0
+accelerate>=0.28.0
+qwen-vl-utils>=0.0.8
+
+# Flash Attention (optional, install manually if CUDA compiled):
+# pip install flash-attn --no-build-isolation
+
+# ── OCR ────────────────────────────────────────────────────────────
+PyMuPDF>=1.24.0          # fitz — PDF → image
+rapidocr-onnxruntime>=1.3.14; python_version<"3.13"
+Pillow>=10.0.0
+
+# ── Embeddings ────────────────────────────────────────────────────
+FlagEmbedding>=1.2.9     # BGE-M3
+
+# ── Vector Database ───────────────────────────────────────────────
+qdrant-client>=1.9.0
+
+# ── Graph ─────────────────────────────────────────────────────────
+networkx>=3.3
+
+# ── Database / Async ─────────────────────────────────────────────
+aiosqlite>=0.20.0
+
+# ── Web / API ─────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+httpx>=0.27.0
+websockets>=12.0
+
+# ── Chatbot UI ────────────────────────────────────────────────────
+chainlit>=1.1.0
+pydantic>=2.7.0
+
+# ── Config ────────────────────────────────────────────────────────
+PyYAML>=6.0.1
+
+# ── DSPy ─────────────────────────────────────────────────────────
+dspy-ai>=2.4.0
+
+# ── Statistics / Metrics ──────────────────────────────────────────
+numpy>=1.26.0
+scipy>=1.13.0
+scikit-learn>=1.4.0
+
+# ── Visualization ────────────────────────────────────────────────
+matplotlib>=3.9.0
+seaborn>=0.13.0
+
+# ── Data ──────────────────────────────────────────────────────────
+pandas>=2.2.0
+
+# ── Testing ───────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+
+# ── Dev utilities ────────────────────────────────────────────────
+python-dotenv>=1.0.0
+rich>=13.7.0
