@@ -4,7 +4,7 @@ file_processor.py
 Processes student-uploaded files for the tutoring context.
 
 Supported inputs:
-  - Images (PNG, JPG, WEBP, GIF) → described by Qwen2.5-VL-7B
+  - Images (PNG, JPG, WEBP, GIF) → described by Qwen3-VL-8B
   - PDF pages → rendered then described by VLM
   - CSV / Excel tables → parsed to Markdown table
   - Plain text / code → returned as-is with truncation
@@ -49,13 +49,13 @@ _vlm_processor = None
 
 
 def _ensure_vlm(cfg: dict):
-    """Load Qwen2.5-VL if not already in memory."""
+    """Load Qwen3-VL if not already in memory."""
     global _vlm_model, _vlm_processor
     if _vlm_model is not None:
         return _vlm_model, _vlm_processor
 
     import torch
-    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+    from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 
     model_id = cfg["vlm"]["model_id"]
     local_path = Path(cfg["vlm"]["local_path"])
@@ -68,19 +68,33 @@ def _ensure_vlm(cfg: dict):
     }
     torch_dtype = dtype_map.get(cfg["vlm"]["torch_dtype"], torch.bfloat16)
 
-    attn = cfg["vlm"]["attn_implementation"]
+    quantization_config = None
+    if cfg["vlm"].get("load_in_4bit"):
+        from transformers import BitsAndBytesConfig
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+    elif cfg["vlm"].get("load_in_8bit"):
+        from transformers import BitsAndBytesConfig
+        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+
+    load_kwargs = dict(
+        torch_dtype=torch_dtype,
+        attn_implementation=cfg["vlm"]["attn_implementation"],
+        device_map=cfg["hardware"]["vlm_device"],
+    )
+    if quantization_config is not None:
+        load_kwargs["quantization_config"] = quantization_config
+
     try:
-        _vlm_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            source, torch_dtype=torch_dtype,
-            attn_implementation=attn,
-            device_map=cfg["vlm"]["vlm_device"],
-        )
+        _vlm_model = Qwen3VLForConditionalGeneration.from_pretrained(source, **load_kwargs)
     except Exception:
-        _vlm_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            source, torch_dtype=torch_dtype,
-            attn_implementation=cfg["vlm"]["attn_fallback"],
-            device_map=cfg["vlm"]["vlm_device"],
-        )
+        load_kwargs["attn_implementation"] = cfg["vlm"]["attn_fallback"]
+        _vlm_model = Qwen3VLForConditionalGeneration.from_pretrained(source, **load_kwargs)
+
     _vlm_processor = AutoProcessor.from_pretrained(
         source,
         min_pixels=cfg["vlm"]["min_pixels"] * 28 * 28,
@@ -97,7 +111,6 @@ def _describe_image_with_vlm(image: Image.Image, cfg: dict,
                               filename: str = "") -> str:
     """Run Qwen2.5-VL on a PIL Image and return a descriptive text."""
     import torch
-    from qwen_vl_utils import process_vision_info
 
     model, processor = _ensure_vlm(cfg)
 
@@ -185,26 +198,31 @@ def _describe_image_with_vlm(image: Image.Image, cfg: dict,
         }
     ]
 
-    text = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+    inputs = processor.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_dict=True,
+        return_tensors="pt",
     )
-    image_inputs, video_inputs = process_vision_info(messages)
-    inputs = processor(
-        text=[text], images=image_inputs, videos=video_inputs,
-        padding=True, return_tensors="pt"
-    ).to(cfg["vlm"]["vlm_device"])
+    inputs = inputs.to(model.device)
 
+    vlm_cfg = cfg["vlm"]
     with torch.no_grad():
         output_ids = model.generate(
             **inputs,
-            max_new_tokens=800,
-            temperature=0.1,
-            do_sample=False,
+            max_new_tokens=vlm_cfg["max_new_tokens"],
+            do_sample=vlm_cfg["do_sample"],
+            temperature=vlm_cfg["temperature"],
+            top_p=vlm_cfg["top_p"],
+            top_k=vlm_cfg["top_k"],
+            repetition_penalty=vlm_cfg["repetition_penalty"],
         )
-    generated = output_ids[:, inputs["input_ids"].shape[1]:]
+    generated_ids_trimmed = [
+        out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs["input_ids"], output_ids)
+    ]
     description = processor.batch_decode(
-        generated, skip_special_tokens=True,
-        clean_up_tokenization_spaces=False
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0].strip()
 
     prefix = f"[Image: {filename}]\n" if filename else "[Uploaded Image]\n"
