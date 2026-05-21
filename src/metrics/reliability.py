@@ -6,11 +6,12 @@ Inter-rater reliability metrics for the cognitive assessment ensemble.
 Implements:
   - Fleiss' Kappa (categorical agreement across K raters, N items)
   - Krippendorff's Alpha (ordinal, handles missing data)
+  - Gwet's AC2 (ordinal, quadratic weights — robust to Kappa Paradox / skewed distributions)
   - Per-dimension breakdown
   - Automatic weight update for MajorityVoter
 
-Reference:
-  Fleiss (1971), Krippendorff (2011)
+References:
+  Fleiss (1971), Krippendorff (2011), Gwet (2014) Handbook of Inter-Rater Reliability
 """
 
 from __future__ import annotations
@@ -215,7 +216,7 @@ def compute_dimension_reliability(
 
         if not rows:
             results[dim] = {"fleiss_kappa": float("nan"), "krippendorff_alpha": float("nan"),
-                            "n_items": 0, "pct_consensus": 0.0}
+                            "gwet_ac2": float("nan"), "n_items": 0, "pct_consensus": 0.0}
             continue
 
         K = max(len(r) for r in rows)
@@ -229,6 +230,7 @@ def compute_dimension_reliability(
 
         kappa = fleiss_kappa(cat_matrix, categories=[0.0, 1.0, 2.0])
         alpha = krippendorff_alpha(matrix_KN, level_of_measurement="ordinal")
+        ac2 = gwet_ac2(matrix_NK, categories=[0.0, 1.0, 2.0])
 
         # % of items where all raters agreed
         consensus_count = sum(
@@ -241,11 +243,118 @@ def compute_dimension_reliability(
         results[dim] = {
             "fleiss_kappa": round(kappa, 4) if not np.isnan(kappa) else None,
             "krippendorff_alpha": round(alpha, 4) if not np.isnan(alpha) else None,
+            "gwet_ac2": round(ac2, 4) if not np.isnan(ac2) else None,
             "n_items": len(rows),
             "pct_consensus": pct_consensus,
         }
 
     return results
+
+
+# ── Gwet's AC2 ───────────────────────────────────────────────────────────────
+
+def gwet_ac2(
+    rating_matrix: np.ndarray,
+    categories: Optional[List] = None,
+) -> float:
+    """
+    Gwet's AC2 with quadratic weights for ordinal data.
+
+    Robust to the Kappa Paradox — does not artificially deflate when class
+    distributions are highly skewed (common in educational engagement data).
+
+    Parameters
+    ----------
+    rating_matrix : np.ndarray, shape (N, K)
+        N items × K raters.  np.nan or None = missing.
+    categories : list, optional
+        Explicit list of ordered category values.  Auto-detected if None.
+
+    Returns
+    -------
+    float : AC2 ∈ [-1, 1]
+
+    Reference
+    ---------
+    Gwet (2014) Handbook of Inter-Rater Reliability, 4th ed., §4.4
+    Formula: AC2 = (p_a - p_e) / (1 - p_e)
+    where p_e = T_w - (1/(K-1)) * Σ_k w(k,k) * π_k * (1-π_k)
+    and T_w = Σ_{k,l} w(k,l) * π_k * π_l  (quadratic weights)
+    """
+    N, K = rating_matrix.shape
+
+    if categories is None:
+        flat = rating_matrix.flatten()
+        categories = sorted(set(
+            v for v in flat
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ))
+
+    q = len(categories)
+    if q < 2:
+        return float("nan")
+
+    cat_idx = {c: i for i, c in enumerate(categories)}
+    r = float(max(categories) - min(categories)) or 1.0
+
+    # Quadratic weight matrix: w(i,j) = 1 - ((vi - vj) / range)²
+    W = np.array([
+        [1.0 - ((categories[ci] - categories[cj]) / r) ** 2 for cj in range(q)]
+        for ci in range(q)
+    ])
+
+    # p_a: mean weighted pairwise agreement across all items
+    pa_items = []
+    for i in range(N):
+        vals = [
+            rating_matrix[i, j] for j in range(K)
+            if rating_matrix[i, j] is not None
+            and not (isinstance(rating_matrix[i, j], float) and np.isnan(rating_matrix[i, j]))
+        ]
+        m = len(vals)
+        if m < 2:
+            continue
+        agree, n_pairs = 0.0, 0
+        for a in range(m):
+            for b in range(a + 1, m):
+                ci = cat_idx.get(vals[a])
+                cj = cat_idx.get(vals[b])
+                if ci is not None and cj is not None:
+                    agree += W[ci, cj]
+                    n_pairs += 1
+        if n_pairs > 0:
+            pa_items.append(agree / n_pairs)
+
+    if not pa_items:
+        return float("nan")
+    p_a = float(np.mean(pa_items))
+
+    # Marginal proportions π per category
+    all_vals = [
+        rating_matrix[i, j] for i in range(N) for j in range(K)
+        if rating_matrix[i, j] is not None
+        and not (isinstance(rating_matrix[i, j], float) and np.isnan(rating_matrix[i, j]))
+    ]
+    if not all_vals:
+        return float("nan")
+    pi = np.zeros(q)
+    for v in all_vals:
+        idx = cat_idx.get(v)
+        if idx is not None:
+            pi[idx] += 1
+    pi /= len(all_vals)
+
+    # Gwet's chance-expected agreement (AC2 formula)
+    # T_w = Σ_{k,l} w(k,l) * π_k * π_l
+    T_w = float(pi @ W @ pi)
+    # Diagonal correction: w(k,k)=1 for quadratic weights
+    diag_correction = float(np.sum(np.diag(W) * pi * (1.0 - pi)))
+    p_e = T_w - diag_correction / (K - 1) if K > 1 else T_w
+
+    if abs(1.0 - p_e) < 1e-10:
+        return float("nan")
+
+    return float((p_a - p_e) / (1.0 - p_e))
 
 
 def interpret_kappa(k: Optional[float]) -> str:
@@ -257,6 +366,18 @@ def interpret_kappa(k: Optional[float]) -> str:
     if k < 0.60: return "moderate"
     if k < 0.80: return "substantial"
     return "almost perfect"
+
+
+def interpret_ac2(v: Optional[float]) -> str:
+    """AC2 uses stricter thresholds — values > 0.80 are typical for good AI evaluators."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "undefined"
+    if v < 0.00: return "poor (< chance)"
+    if v < 0.20: return "slight"
+    if v < 0.40: return "fair"
+    if v < 0.60: return "moderate"
+    if v < 0.80: return "substantial"
+    return "almost perfect (AI-validated)"
 
 
 def update_model_kappa_weights(

@@ -8,8 +8,8 @@ Generates:
   2. ICAP level distribution bar chart (across all students)
   3. Engagement trajectory plot (C4-C8 avg over turn number)
   4. Duration vs. cognitive depth scatter (Duration_Sec vs C4 score)
-  5. Per-user cognitive profile radar chart
-  6. Comprehensive LaTeX table export
+  5. Latent Transition Analysis (LTA) ICAP state transition heatmap
+  6. Comprehensive LaTeX table export (Fleiss κ, Gwet AC2, Krippendorff α)
 
 All plots use a clean academic style (no grid clutter).
 """
@@ -96,7 +96,7 @@ def plot_dimension_correlation_heatmap(
 
     fig, ax = plt.subplots(figsize=(9, 7))
     im = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
-    plt.colorbar(im, ax=ax, label="Spearman ρ")
+    plt.colorbar(im, ax=ax, label="Spearman rho")
 
     labels = [DIM_LABELS.get(d, d) for d in DIMENSIONS]
     ax.set_xticks(range(n_dims)); ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
@@ -174,7 +174,7 @@ def plot_engagement_trajectory(
 
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.errorbar(turns, means, yerr=sems, marker="o", linewidth=2,
-                capsize=4, color="#2ca02c", label="Mean C4-C8 ± SEM")
+                capsize=4, color="#2ca02c", label="Mean C4-C8 +/- SEM")
     ax.set_xlabel("Turn number"); ax.set_ylabel("Mean C4-C8 score (0-2)")
     ax.set_ylim(0, 2); ax.set_title("Cognitive Engagement Trajectory", fontweight="bold")
     ax.axhline(y=1, color="gray", linestyle="--", linewidth=0.8, alpha=0.6)
@@ -195,7 +195,6 @@ def plot_duration_vs_depth(
         return
 
     xs, ys, colors = [], [], []
-    icap_order = {"Passive": 0, "Active": 1, "Constructive": 2, "Interactive": 3}
     for row in scores_rows:
         dur = row.get("duration_sec", None)
         c4 = row.get("C4_dominant", "NA")
@@ -213,7 +212,6 @@ def plot_duration_vs_depth(
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.scatter(xs, ys, c=colors, alpha=0.55, s=35, edgecolors="none")
 
-    # Threshold lines
     ax.axvline(x=8, color="orange", linestyle="--", linewidth=0.9, alpha=0.7, label="Active threshold (8s)")
     ax.axvline(x=25, color="green", linestyle="--", linewidth=0.9, alpha=0.7, label="Constructive threshold (25s)")
 
@@ -234,6 +232,64 @@ def plot_duration_vs_depth(
     logger.info(f"[Viz] Saved duration scatter to {output_path}")
 
 
+def plot_latent_transition_heatmap(
+    scores_rows: List[Dict],
+    output_path: Path,
+):
+    """ICAP state transition probability heatmap (Latent Transition Analysis).
+
+    Rows = origin state, columns = destination state.  Each cell shows the
+    empirical probability of transitioning from state i to state j on the
+    next consecutive turn within the same session.
+    """
+    plt = _try_import_mpl()
+    if plt is None:
+        return
+
+    from collections import defaultdict
+
+    LEVELS = ["Passive", "Active", "Constructive", "Interactive"]
+    lvl_idx = {l: i for i, l in enumerate(LEVELS)}
+    n = len(LEVELS)
+    counts = np.zeros((n, n), dtype=float)
+
+    by_session: Dict[Any, List] = defaultdict(list)
+    for row in scores_rows:
+        sid = row.get("session_id", row.get("user_id", "unknown"))
+        turn = row.get("turn_number", 0)
+        icap = row.get("dominant_icap", None)
+        if icap in lvl_idx:
+            by_session[sid].append((turn, icap))
+
+    for turns in by_session.values():
+        turns_sorted = sorted(turns, key=lambda x: x[0])
+        for (_, icap1), (_, icap2) in zip(turns_sorted, turns_sorted[1:]):
+            counts[lvl_idx[icap1], lvl_idx[icap2]] += 1
+
+    row_sums = counts.sum(axis=1, keepdims=True)
+    probs = np.where(row_sums > 0, counts / row_sums, 0.0)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(probs, cmap="Blues", vmin=0, vmax=1, aspect="auto")
+    plt.colorbar(im, ax=ax, label="Transition probability")
+
+    ax.set_xticks(range(n)); ax.set_xticklabels(LEVELS, rotation=30, ha="right", fontsize=9)
+    ax.set_yticks(range(n)); ax.set_yticklabels(LEVELS, fontsize=9)
+    ax.set_xlabel("To state"); ax.set_ylabel("From state")
+    ax.set_title("ICAP State Transition Probabilities (LTA)", fontweight="bold")
+
+    for i in range(n):
+        for j in range(n):
+            ax.text(j, i, f"{probs[i, j]:.2f}", ha="center", va="center",
+                    fontsize=9, color="white" if probs[i, j] > 0.5 else "black")
+
+    plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(output_path), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"[Viz] Saved LTA heatmap to {output_path}")
+
+
 def export_latex_table(
     reliability_results: Dict,
     ece_result: Dict,
@@ -241,45 +297,47 @@ def export_latex_table(
 ):
     """Export a publication-ready LaTeX table of reliability metrics."""
     lines = [
-        r"egin{table}[h]",
+        r"\begin{table}[h]",
         r"\centering",
         r"\caption{Inter-rater Reliability and Calibration Metrics for the Cognitive Assessment Ensemble}",
         r"\label{tab:reliability}",
-        r"egin{tabular}{lcccc}",
+        r"\begin{tabular}{lccccc}",
         r"\hline",
-        r"Dimension & Fleiss' $\kappa$ & Interpretation & Krippendorff's $lpha$ & Consensus \% \",
+        r"Dimension & Fleiss' $\kappa$ & Gwet's AC2 & Interpretation & Krippendorff's $\alpha$ & Consensus \% \\",
         r"\hline",
     ]
 
+    from .reliability import interpret_kappa, interpret_ac2
     for dim in DIMENSIONS:
         r = reliability_results.get(dim, {})
         kappa = r.get("fleiss_kappa")
+        ac2 = r.get("gwet_ac2")
         alpha = r.get("krippendorff_alpha")
         consensus = r.get("pct_consensus", 0.0)
 
-        from .reliability import interpret_kappa
-        interp = interpret_kappa(kappa)
-        kappa_str = f"{kappa:.3f}" if kappa is not None else "—"
-        alpha_str = f"{alpha:.3f}" if alpha is not None else "—"
+        interp = interpret_ac2(ac2) if ac2 is not None else interpret_kappa(kappa)
+        kappa_str = f"{kappa:.3f}" if kappa is not None else "---"
+        ac2_str = f"{ac2:.3f}" if ac2 is not None else "---"
+        alpha_str = f"{alpha:.3f}" if alpha is not None else "---"
         lines.append(
-            f"  {DIM_LABELS.get(dim, dim)} & {kappa_str} & {interp} & "
-            f"{alpha_str} & {consensus*100:.1f}\% \\"
+            f"  {DIM_LABELS.get(dim, dim)} & {kappa_str} & {ac2_str} & {interp} & "
+            f"{alpha_str} & {consensus * 100:.1f}\\% \\\\"
         )
 
     ece_val = ece_result.get("ece", None)
     n_pred = ece_result.get("n_predictions", 0)
+    ece_str = f"{ece_val:.4f}" if ece_val is not None else "N/A"
     lines += [
         r"\hline",
-        f"  \multicolumn{{4}}{{l}}{{Expected Calibration Error (ECE): "
-        f"{ece_val:.4f} over {n_pred} predictions}} \\",
+        f"  \\multicolumn{{6}}{{l}}{{Expected Calibration Error (ECE): "
+        f"{ece_str} over {n_pred} predictions}} \\\\",
         r"\hline",
         r"\end{tabular}",
         r"\end{table}",
     ]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("
-".join(lines))
+    output_path.write_text("\n".join(lines))
     logger.info(f"[Viz] Exported LaTeX table to {output_path}")
 
 
@@ -300,6 +358,7 @@ def run_full_report(
     plot_icap_distribution(scores, output_dir / "icap_distribution.png")
     plot_engagement_trajectory(scores, output_dir / "trajectory.png")
     plot_duration_vs_depth(scores, output_dir / "duration_scatter.png")
+    plot_latent_transition_heatmap(scores, output_dir / "lta_transitions.png")
 
     # Reliability
     votes_lists = []
