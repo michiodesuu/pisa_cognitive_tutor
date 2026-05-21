@@ -14,12 +14,14 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncGenerator, List, Optional, Tuple
 
 import fitz  # PyMuPDF
 from PIL import Image
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +47,10 @@ class PDFProcessor:
     ----------
     dpi : int
         Rendering resolution.  200 DPI produces ~1654×2339 px for A4 — enough
-        for Qwen2.5-VL to read math and tables without blurring.
+        for Qwen3-VL to read math and tables without blurring.
     max_pages_per_shard : int
         Number of pages per shard.  Larger = more VRAM per forward pass.
-        Keep at 3 for 24 GB VRAM with Qwen2.5-VL-7B.
+        Keep at 3 for 24 GB VRAM with Qwen3-VL-8B.
     """
 
     def __init__(self, dpi: int = 200, max_pages_per_shard: int = 3):
@@ -94,16 +96,24 @@ class PDFProcessor:
             )
             loop = asyncio.get_event_loop()
             shard_idx = 0
+            n_shards = math.ceil(total_pages / self.max_pages_per_shard)
 
+            page_bar = tqdm(
+                total=total_pages,
+                desc=f"    rendering {pdf_path.name[:30]}",
+                unit="page",
+                position=2,
+                leave=False,
+            )
             for start in range(0, total_pages, self.max_pages_per_shard):
                 end = min(start + self.max_pages_per_shard - 1, total_pages - 1)
 
-                # Render pages concurrently within a shard
                 tasks = [
                     self._render_page_async(loop, doc[p])
                     for p in range(start, end + 1)
                 ]
                 images = await asyncio.gather(*tasks)
+                page_bar.update(end - start + 1)
 
                 shard = PageShard(
                     pdf_path=pdf_path,
@@ -114,8 +124,8 @@ class PDFProcessor:
                 yield shard
                 shard_idx += 1
 
-                # Yield control so queue consumers can run
                 await asyncio.sleep(0)
+            page_bar.close()
 
         except Exception as exc:
             logger.error(f"[PDFProcessor] Failed to process {pdf_path}: {exc}")

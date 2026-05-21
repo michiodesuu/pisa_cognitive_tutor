@@ -20,11 +20,23 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
 import yaml
+from tqdm import tqdm
+
+
+class _TqdmLoggingHandler(logging.StreamHandler):
+    def emit(self, record):
+        try:
+            tqdm.write(self.format(record))
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
 
 from .graph_rag_builder import KnowledgeGraphBuilder
 from .pdf_processor import PDFProcessor
@@ -34,7 +46,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     handlers=[
-        logging.StreamHandler(),
+        _TqdmLoggingHandler(),
         logging.FileHandler("ingestion.log", encoding="utf-8"),
     ],
 )
@@ -83,23 +95,35 @@ async def run_pipeline(config_path: Path):
     if kb_cfg.get("resume_from_checkpoint", True):
         processed = _load_processed_files(output_path)
         if processed:
-            logger.info(f"Resume: skipping {len(processed)} already-processed files")
+            tqdm.write(f"[RESUME] Skipping {len(processed)} already-processed file(s)")
+
+    pending = [p for p in pdfs if p.name not in processed]
+    if not pending:
+        tqdm.write("[PIPELINE] All PDFs already processed. Nothing to do.")
+    else:
+        tqdm.write(f"[PIPELINE] {len(pending)} PDF(s) to process, {len(processed)} skipped")
 
     loop = asyncio.get_event_loop()
     total_records = 0
     t_start = time.perf_counter()
 
     with output_path.open("a", encoding="utf-8") as out_f:
-        for pdf_path in pdfs:
-            if pdf_path.name in processed:
-                logger.info(f"  [SKIP] {pdf_path.name}")
-                continue
-
-            logger.info(f"[PIPELINE] Processing {pdf_path.name}")
+        pdf_bar = tqdm(pending, desc="PDFs", unit="pdf", position=0)
+        for pdf_path in pdf_bar:
+            pdf_bar.set_description(f"PDF: {pdf_path.name[:38]}")
             file_records: List[Dict[str, Any]] = []
 
+            page_count = await processor.get_page_count(pdf_path)
+            n_shards = math.ceil(page_count / cfg["vlm"]["max_pages_per_shard"])
+
+            shard_bar = tqdm(
+                total=n_shards,
+                desc="  shards",
+                unit="shard",
+                position=1,
+                leave=False,
+            )
             async for shard in processor.shard_pdf(pdf_path):
-                # Run GPU inference in executor to keep event loop responsive
                 records = await loop.run_in_executor(
                     None,
                     extractor.extract_shard,
@@ -108,41 +132,39 @@ async def run_pipeline(config_path: Path):
                     shard.page_range_str,
                 )
                 file_records.extend(records)
-                logger.info(
-                    f"  Shard {shard.shard_index} "
-                    f"(pages {shard.page_range_str}): {len(records)} records"
-                )
+                shard_bar.update(1)
+                shard_bar.set_postfix(records=len(file_records), pages=shard.page_range_str)
+            shard_bar.close()
 
-            # Write all records for this file
             for rec in file_records:
                 out_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             out_f.flush()
 
             total_records += len(file_records)
-            logger.info(
-                f"[PIPELINE] {pdf_path.name}: {len(file_records)} records written"
-            )
+            pdf_bar.set_postfix(total_records=total_records)
+            tqdm.write(f"  [DONE] {pdf_path.name}: {len(file_records)} records")
 
     elapsed = time.perf_counter() - t_start
-    logger.info(
-        f"\n[PIPELINE] COMPLETE: {total_records} total records in {elapsed:.1f}s"
-    )
+    tqdm.write(f"\n[PIPELINE] Extraction complete: {total_records} records in {elapsed:.1f}s")
+    logger.info(f"[PIPELINE] COMPLETE: {total_records} total records in {elapsed:.1f}s")
 
     # ── Build knowledge graph ─────────────────────────────────────────────────
-    logger.info("[PIPELINE] Building knowledge graph...")
-    builder = KnowledgeGraphBuilder(config_path)
-    builder.ingest_jsonl(output_path)
-    builder.save()
+    tqdm.write("[PIPELINE] Building knowledge graph...")
+    with tqdm(total=1, desc="Knowledge graph", unit="step") as bar:
+        builder = KnowledgeGraphBuilder(config_path)
+        builder.ingest_jsonl(output_path)
+        builder.save()
+        bar.update(1)
 
     # ── Ingest into Qdrant ────────────────────────────────────────────────────
-    logger.info("[PIPELINE] Ingesting into Qdrant vector DB...")
+    tqdm.write("[PIPELINE] Ingesting into Qdrant vector DB...")
     from ..retrieval.embedder import BGEEmbedder
     from ..retrieval.hybrid_search import QdrantHybridSearch
 
     embedder = BGEEmbedder(config_path)
     searcher = QdrantHybridSearch(config_path, embedder)
     searcher.ingest_jsonl(output_path)
-    logger.info("[PIPELINE] Vector DB ingestion complete.")
+    tqdm.write("[PIPELINE] Done.")
 
 
 def main():

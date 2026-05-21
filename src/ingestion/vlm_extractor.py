@@ -1,7 +1,7 @@
 """
 vlm_extractor.py
 ─────────────────
-Runs Qwen2.5-VL-7B locally to extract structured JSON knowledge records
+Runs Qwen3-VL-8B locally to extract structured JSON knowledge records
 from PISA PDF page images.  Bypasses OCR entirely — the VLM reads math,
 tables, Thai/Chinese/English text natively from the raw image.
 
@@ -30,12 +30,12 @@ _qwen_processor = None
 
 
 def _load_model(cfg: dict) -> tuple:
-    """Load Qwen2.5-VL model and processor (singleton)."""
+    """Load Qwen3-VL model and processor (singleton)."""
     global _qwen_model, _qwen_processor
     if _qwen_model is not None:
         return _qwen_model, _qwen_processor
 
-    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+    from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 
     model_id = cfg["vlm"]["model_id"]
     local_path = Path(cfg["vlm"]["local_path"])
@@ -44,24 +44,36 @@ def _load_model(cfg: dict) -> tuple:
     dtype_map = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
     torch_dtype = dtype_map.get(cfg["vlm"]["torch_dtype"], torch.bfloat16)
 
-    attn = cfg["vlm"]["attn_implementation"]
-    try:
-        _qwen_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            source,
-            torch_dtype=torch_dtype,
-            attn_implementation=attn,
-            device_map=cfg["vlm"]["vlm_device"],
+    quantization_config = None
+    if cfg["vlm"].get("load_in_4bit"):
+        from transformers import BitsAndBytesConfig
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
         )
+    elif cfg["vlm"].get("load_in_8bit"):
+        from transformers import BitsAndBytesConfig
+        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+
+    load_kwargs = dict(
+        torch_dtype=torch_dtype,
+        attn_implementation=cfg["vlm"]["attn_implementation"],
+        device_map=cfg["hardware"]["vlm_device"],
+    )
+    if quantization_config is not None:
+        load_kwargs["quantization_config"] = quantization_config
+
+    try:
+        _qwen_model = Qwen3VLForConditionalGeneration.from_pretrained(source, **load_kwargs)
     except Exception:
         logger.warning(
-            f"[VLM] {attn} not available, falling back to {cfg['vlm']['attn_fallback']}"
+            f"[VLM] {load_kwargs['attn_implementation']} not available, "
+            f"falling back to {cfg['vlm']['attn_fallback']}"
         )
-        _qwen_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            source,
-            torch_dtype=torch_dtype,
-            attn_implementation=cfg["vlm"]["attn_fallback"],
-            device_map=cfg["vlm"]["vlm_device"],
-        )
+        load_kwargs["attn_implementation"] = cfg["vlm"]["attn_fallback"]
+        _qwen_model = Qwen3VLForConditionalGeneration.from_pretrained(source, **load_kwargs)
 
     _qwen_processor = AutoProcessor.from_pretrained(
         source,
@@ -70,7 +82,7 @@ def _load_model(cfg: dict) -> tuple:
     )
 
     _qwen_model.eval()
-    logger.info(f"[VLM] Loaded {model_id} on {cfg['vlm']['vlm_device']}")
+    logger.info(f"[VLM] Loaded {model_id} on {cfg['hardware']['vlm_device']}")
     return _qwen_model, _qwen_processor
 
 
@@ -183,37 +195,35 @@ class VLMExtractor:
         """
         self._ensure_loaded()
 
-        from qwen_vl_utils import process_vision_info
-
         messages = self._build_messages(images, source_file, page_range_str)
 
-        # Apply chat template
-        text = self._processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        image_inputs, video_inputs = process_vision_info(messages)
-
-        inputs = self._processor(
-            text=[text],
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
+        inputs = self._processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
             return_tensors="pt",
-        ).to(self.cfg["vlm"]["vlm_device"])
+        )
+        inputs = inputs.to(self._model.device)
 
+        vlm_cfg = self.cfg["vlm"]
         t0 = time.perf_counter()
         with torch.no_grad():
             output_ids = self._model.generate(
                 **inputs,
-                max_new_tokens=self.cfg["vlm"]["max_new_tokens"],
-                temperature=self.cfg["vlm"]["temperature"],
-                do_sample=self.cfg["vlm"]["do_sample"],
+                max_new_tokens=vlm_cfg["max_new_tokens"],
+                do_sample=vlm_cfg["do_sample"],
+                temperature=vlm_cfg["temperature"],
+                top_p=vlm_cfg["top_p"],
+                top_k=vlm_cfg["top_k"],
+                repetition_penalty=vlm_cfg["repetition_penalty"],
             )
 
-        # Decode only the generated tokens (strip the input)
-        generated = output_ids[:, inputs["input_ids"].shape[1]:]
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs["input_ids"], output_ids)
+        ]
         raw = self._processor.batch_decode(
-            generated, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )[0]
         elapsed = time.perf_counter() - t0
 
