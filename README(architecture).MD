@@ -1,7 +1,7 @@
 # PISA Cognitive Tutor v2.0 — Architecture Deep Dive
 
 > **Built for NECTEC** (National Electronics and Computer Technology Center)  
-> An AI-powered Socratic tutoring platform that measures student cognitive engagement using the **ICAP Framework** (Chi & Wylie, 2014).
+> An AI-powered Socratic tutoring platform that measures student cognitive engagement using the **ICAP Framework** (Chi & Wylie, 2014) and the expanded **Computational Neuro-Software Engineering (C1–C8) Framework**.
 
 ---
 
@@ -40,8 +40,14 @@ PISA Cognitive Tutor v2.0 has two parallel jobs, kept deliberately separate:
 
 A student interacts with a Socratic tutor that guides them through PISA science questions using retrieved knowledge. After the session ends, an ensemble of 4 LLMs (running offline) scores every student turn across 8 cognitive dimensions. The scores are aggregated into per-student profiles and inter-rater reliability metrics, enabling research-grade analysis of cognitive engagement.
 
-**The central hypothesis being tested:**  
-_Learning outcomes improve monotonically as students progress through Passive → Active → Constructive → Interactive engagement._
+**The four research hypotheses being tested (H1–H4):**
+
+| # | Hypothesis | Primary Metric |
+| --- | --- | --- |
+| **H1** | Higher C4–C8 scores correlate with longer response times (> 25 s) | Spearman ρ(C4-C8 mean, Duration_Sec) ≥ 0.35 |
+| **H2** | ICAP state progresses toward Interactive over dialogue turns | LTA transition matrix: P(upgrade) > P(downgrade) |
+| **H3** | 4-model ensemble achieves substantial agreement across all 8 dimensions | Gwet's AC2 ≥ 0.60 on C1–C4; AC2 ≥ 0.50 on C5–C8 |
+| **H4** | Typhoon 2 shows higher agreement on Thai-language turns than English-only models | Δ agreement rate ≥ +5 pp on Thai-language turns |
 
 ---
 
@@ -73,7 +79,7 @@ Each conversation turn is scored across 8 cognitive dimensions (C1–C8), which 
 ║  PISA PDFs ──► PDFProcessor ──► PIL Images (3-page shards)          ║
 ║                                       │                              ║
 ║                               VLMExtractor                           ║
-║                           Qwen2.5-VL-7B (local)                     ║
+║                       Qwen3-VL-8B (QLoRA 4-bit)                     ║
 ║                       (reads math, tables, Thai/Chinese)            ║
 ║                                       │                              ║
 ║                          JSON Validation & JSONL                     ║
@@ -118,7 +124,7 @@ Each conversation turn is scored across 8 cognitive dimensions (C1–C8), which 
    UserProfiler → per-student profiles
           │
           ▼
-   Metrics (Fleiss' κ, Krippendorff's α)
+   Metrics (Fleiss' κ, Gwet's AC2, Krippendorff's α, LTA)
 ```
 
 ---
@@ -163,7 +169,7 @@ PageShard(
 
 #### `vlm_extractor.py` — Images to Structured JSON
 
-**Model:** `Qwen2.5-VL-7B-Instruct` (7B parameter Vision Language Model, loaded in bfloat16 with flash_attention_2)
+**Model:** `Qwen3-VL-8B-Instruct` (8B parameter Vision Language Model, loaded in QLoRA 4-bit via `bitsandbytes` — ~5 GB VRAM at runtime)
 
 **What it does:**  
 Takes 3-page image shards and asks the VLM to extract structured educational metadata in JSON format.
@@ -180,7 +186,7 @@ Takes 3-page image shards and asks the VLM to extract structured educational met
 - `cognitive_demand`: Low / Medium / High
 - `visual_description`: Description of any diagram or table
 
-**Low temperature (0.05):** The VLM is used for extraction, not creativity. Low temperature keeps output deterministic and JSON-parseable.
+**Sampling parameters:** `temperature=0.7, top_p=0.8, top_k=20, repetition_penalty=1.0` — the official Qwen3-VL recommended values. Higher temperature than previous versions; consistent JSON output is ensured by the surgical bracket matcher rather than by suppressing sampling.
 
 **JSON extraction:** Uses a "surgical bracket matcher" — it finds the outermost `[...]` in the raw output and attempts `json.loads()`. This handles the common LLM pattern of generating text before and after JSON.
 
@@ -326,7 +332,8 @@ exactly|perfect|ถูกต้อง|ผิด|เก่งมาก|ดีม�
 This prevents the tutor from inadvertently providing assessment feedback — which would bias student behaviour and invalidate the cognitive measurement.
 
 **LLM Backend:**
-- Primary: Ollama local server (`qwen2.5:7b-instruct-q8_0`)
+
+- Primary: Ollama local server (`qwen3:8b-q8_0`)
 - Fallback: HuggingFace `transformers` (loads model directly)
 - Config: `temperature=0.7, max_tokens=1024, top_p=0.9`
 
@@ -431,7 +438,7 @@ The heart of the cognitive assessment system. Four locally-running LLMs each ind
 
 | Model | Tag | Strength |
 |-------|-----|---------|
-| Qwen2.5-7B-Instruct | `qwen2.5:7b-instruct-q8_0` | General reasoning |
+| Qwen3-8B-Instruct | `qwen3:8b-q8_0` | General reasoning |
 | Mistral-7B-Instruct-v0.2 | `mistral:7b-instruct-v0.2-q8_0` | Scientific reasoning |
 | Llama3.1-8B-Instruct | `llama3.1:8b-instruct-q8_0` | Instruction following |
 | Typhoon2-8B-Instruct | `typhoon2:8b-instruct-q4_K_M` | Thai-tuned |
@@ -536,32 +543,92 @@ Aggregates scored turns into a per-student profile.
 
 **Location:** `src/metrics/`
 
-Provides research-grade inter-rater reliability measurements between the 4 ensemble models.
+Provides research-grade inter-rater reliability measurements between the 4 ensemble models, ICAP state transition analysis, and calibration metrics.
 
 ---
 
 #### `reliability.py`
 
-**Fleiss' Kappa (`fleiss_kappa(rating_matrix)`):**  
-Measures agreement among K raters on N items. Input: N×K matrix of ordinal scores.
+Three complementary agreement statistics are computed, each addressing a different measurement concern.
 
-| κ range | Interpretation |
-|---------|---------------|
-| < 0.00 | Poor |
+---
+
+**Fleiss' Kappa (`fleiss_kappa(rating_matrix)`):**  
+Measures agreement among K raters on N items. Input: N×K matrix of ordinal scores (0/1/2).
+
+| Range | Interpretation |
+| --- | --- |
+| < 0.00 | Poor (below chance) |
 | 0.00–0.20 | Slight |
 | 0.20–0.40 | Fair |
 | 0.40–0.60 | Moderate |
-| **0.60–0.80** | **Substantial** ← Research target |
+| **0.60–0.80** | **Substantial** ← H3 target |
 | 0.80–1.00 | Almost perfect |
 
-**Krippendorff's Alpha (`krippendorff_alpha(data, level_of_measurement="ordinal")`):**  
-A more robust measure that handles missing data (when a model fails to respond for a turn) and is appropriate for ordinal scales (0, 1, 2 are ordered, not just categorical).
+**Limitation:** Fleiss' κ is artificially deflated when score distributions are skewed. In early sessions, most students score 0 on C7/C8 (higher-order dimensions). κ treats all-zeros as "chance agreement" even if every model unanimously agrees — this is the **Kappa Paradox**.
 
-**`compute_dimension_reliability()`:**  
-Returns per-dimension breakdown: `{dim: {fleiss_kappa, krippendorff_alpha, n_items, pct_consensus}}` for all C1–C8 dimensions.
+---
+
+**Gwet's AC2 (`gwet_ac2(rating_matrix, categories=[0.0, 1.0, 2.0])`):**  
+The **primary reliability statistic for H3**. Uses quadratic weights and a chance-correction formula that is robust to skewed distributions.
+
+**Formula:**
+
+```text
+W[i,j] = 1 − ((v_i − v_j) / range)²   (quadratic weight matrix)
+p_a    = mean weighted pairwise agreement across all items
+T_w    = π @ W @ π                       (marginal-based chance agreement)
+p_e    = T_w − Σ_k W[k,k]·π_k·(1−π_k) / (K−1)
+AC2    = (p_a − p_e) / (1 − p_e)
+```
+
+Because `p_e` uses the actual marginal distribution rather than treating every category as equally likely, AC2 does not deflate when one category dominates. **For educational engagement data with skewed distributions, AC2 is strictly preferable to κ.**
+
+**`interpret_ac2(v)`** uses the same thresholds as kappa but notes `"almost perfect (AI-validated)"` for v > 0.80, reflecting that AI evaluator ensembles typically achieve higher agreement than human raters on structured rubrics.
+
+---
+
+**Krippendorff's Alpha (`krippendorff_alpha(data, level_of_measurement="ordinal")`):**  
+Handles missing data (when a model times out for a turn) and respects the ordinal scale structure. Useful as a cross-check alongside AC2.
+
+---
+
+**`compute_dimension_reliability(individual_votes_list)`:**  
+Returns per-dimension breakdown for all C1–C8 dimensions:
+
+```python
+{
+  "C4": {
+    "fleiss_kappa": 0.6120,
+    "gwet_ac2": 0.7450,        # primary metric (H3)
+    "krippendorff_alpha": 0.5890,
+    "n_items": 324,
+    "pct_consensus": 0.712
+  }
+}
+```
 
 **`update_model_kappa_weights()`:**  
-Recomputes each model's agreement with the majority vote, normalises to [0.5, 1.5], and persists. This feeds back into `MajorityVoter` for future scoring.
+Recomputes each model's historical agreement with the majority vote. Normalises to [0.5, 1.5]. Persists to `data/processed_jsonl/model_kappa_weights.json`. This feeds back into `MajorityVoter` so models with consistently higher agreement get proportionally higher voting weight.
+
+---
+
+#### `visualizations.py`
+
+Generates all publication-ready figures and the LaTeX reliability table.
+
+| Function | Output | Purpose |
+| --- | --- | --- |
+| `plot_dimension_correlation_heatmap()` | `heatmap.png` | Spearman ρ between C1–C8 dominant scores |
+| `plot_icap_distribution()` | `icap_distribution.png` | ICAP level frequency across all turns |
+| `plot_engagement_trajectory()` | `trajectory.png` | Mean C4–C8 score over turn number |
+| `plot_duration_vs_depth()` | `duration_scatter.png` | Duration_Sec vs. C4 score, coloured by ICAP level |
+| `plot_latent_transition_heatmap()` | `lta_transitions.png` | **LTA: ICAP state transition probabilities (H2)** |
+| `export_latex_table()` | `reliability_table.tex` | Publication table: Fleiss' κ, Gwet's AC2, Krippendorff's α |
+| `run_full_report()` | all of the above | One-call convenience wrapper |
+
+**Latent Transition Analysis (LTA) — `plot_latent_transition_heatmap()`:**  
+Groups scored turns by session, sorts by turn number, counts consecutive-turn state transitions (Passive→Active, Active→Constructive, etc.), and row-normalises to produce a 4×4 empirical transition probability matrix. Visualised as a "Blues" heatmap. Provides direct visual evidence for/against H2 (whether students tend to move toward more engaged states as the session progresses).
 
 ---
 
@@ -583,8 +650,11 @@ This is the production-facing backend consumed by the Next.js frontend.
 | `GET` | `/api/session/{session_id}/history` | Retrieve past turns |
 | `WS` | `/api/chat/{session_id}` | Real-time chat WebSocket |
 | `GET` | `/api/profiles` | All student cognitive profiles |
-| `GET` | `/api/metrics/reliability` | Fleiss' κ + Krippendorff's α |
+| `GET` | `/api/metrics/reliability` | Fleiss' κ + Gwet's AC2 + Krippendorff's α per dimension |
 | `POST` | `/api/analyze` | Trigger AnalyzerPipeline (background task) |
+| `GET` | `/api/neuro/taxonomy` | C1–C8 multi-taxonomy data |
+| `GET` | `/api/neuro/metrics` | Computes current LCAI, CASM, MCI, and PCRS |
+| `POST` | `/api/neuro/code-task` | AST-based ICP heuristic analysis on code |
 
 **WebSocket protocol (`/api/chat/{session_id}`):**
 
@@ -632,7 +702,16 @@ Server streams:
 Calls `createSession()` on mount, renders `Sidebar` + `ChatWindow`.
 
 **`app/dashboard/page.tsx` — Research Dashboard:**  
-Displays student profile cards and reliability tables. Has a "Run Analyzer" button that triggers `POST /api/analyze`.
+Displays student profile cards, reliability tables, and the `NeuroTaxonomyTable`. Has a "Run Analyzer" button that triggers `POST /api/analyze`.
+
+**`app/neuro-framework/page.tsx`:**  
+Visualizes the C1-C8 framework with interactive tables and neuro-biomarker context.
+
+**`app/code-tasks/page.tsx`:**  
+Hosts the `CodeTaskAssessor` component for AST-based code complexity (ICP) analysis.
+
+**`app/research-metrics/page.tsx`:**  
+Interactive gauges and KaTeX-rendered mathematical formulas for LCAI, CASM, MCI, and PCRS.
 
 **Key Components:**
 
@@ -653,9 +732,14 @@ Displays student profile cards and reliability tables. Has a "Run Analyzer" butt
 - Light bar = max capability (peak potential)
 - Trajectory arrow: ↑ improving / → stable / ↓ declining
 
-**`ReliabilityTable.tsx`:**  
-- Per-dimension κ and α values with interpretation labels
-- Shows n_items and pct_consensus
+**`NeuroMetricsPanel.tsx` & `CodeTaskAssessor.tsx`:**
+- Integrates `react-katex` to render mathematical formulas.
+- `react-syntax-highlighter` for code formatting.
+
+**`ReliabilityTable.tsx`:**
+
+- Per-dimension Fleiss' κ, Gwet's AC2, and Krippendorff's α with interpretation labels
+- Shows n_items, pct_consensus, and AC2-based overall interpretation (primary metric for H3)
 
 ---
 
@@ -669,7 +753,7 @@ data/raw_pdfs/*.pdf
         ▼ PDFProcessor
 PIL Image shards (3 pages each, 200 DPI)
         │
-        ▼ VLMExtractor (Qwen2.5-VL-7B, bfloat16)
+        ▼ VLMExtractor (Qwen3-VL-8B, QLoRA 4-bit)
 Raw LLM text → JSON extraction (bracket matching)
         │
         ▼ Validation
@@ -703,7 +787,7 @@ Student sends message
         ├── Qdrant hybrid search (top_k=5)
         ├── Graph subgraph context
         ├── Build Socratic system prompt with context
-        ├── Stream from Ollama (qwen2.5:7b-instruct-q8_0)
+        ├── Stream from Ollama (qwen3:8b-q8_0)
         └── Sanitise forbidden words
         │
         ▼ Stream tokens to frontend
@@ -732,7 +816,11 @@ turns LEFT JOIN scores WHERE scores.id IS NULL
 Per-student dimension profiles + ICAP distributions
         │
         ▼ GET /api/metrics/reliability
-Fleiss' κ + Krippendorff's α per dimension
+Fleiss' κ + Gwet's AC2 + Krippendorff's α per dimension
+        │
+        ▼ visualizations.run_full_report()
+heatmap, icap_distribution, trajectory, duration_scatter,
+lta_transitions (LTA), reliability_table.tex
         │
         ▼ Research Dashboard (frontend/dashboard)
 ProfileCards + ReliabilityTable displayed
@@ -827,18 +915,18 @@ CREATE TABLE scores (
 
 ## 7. The 8 Cognitive Dimensions (C1–C8)
 
-Defined in `configs/icap_rubric.yaml`. Each is scored 0, 1, or 2 (or "NA" if not applicable).
+Defined in `configs/icap_rubric.yaml` under the `neuro_taxonomy` block. Each is scored 0, 1, or 2 (or "NA" if not applicable).
 
-| Dim | Name | ICAP Level | What It Measures | Score 0 | Score 1 | Score 2 |
-|-----|------|-----------|-----------------|---------|---------|---------|
-| **C1** | Content Knowledge Accuracy | Passive–Active | Are stated facts correct? | Incorrect/absent | Partially correct | All correct |
-| **C2** | Concept Understanding Depth | Active–Constructive | Is the concept truly understood? | Rote only | Partial explanation | Clear, correct explanation |
-| **C3** | Data Interpretation & Quantitative Reasoning | Active–Constructive | Can student read graphs/tables? | Ignores data | Simple value reading | Trends + conclusions |
-| **C4** | Causal/Mechanistic Reasoning | Constructive | Does student explain WHY/HOW? | No causality | Incomplete mechanism | Complete mechanism |
-| **C5** | Evidence Evaluation & Scientific Argumentation | Constructive | Claim-Evidence-Reasoning structure? | No distinction | Incomplete chain | Clear CER structure |
-| **C6** | Model-Based/Analogical Thinking | Constructive–Interactive | Uses models, analogies, abstractions? | None | Imprecise analogy | Illuminating analogy |
-| **C7** | Systems Thinking & Transfer | Interactive | Connects across domains? | Isolated thinking | Flawed transfer | Correct cross-domain transfer |
-| **C8** | Metacognitive Reflection | Interactive | Reflects on own reasoning process? | No reflection | Hedging only | Genuine reflection on reasoning |
+| Dim | Cognitive Capacity | Neuro-Structural ALE | Cervical Segment | Defense Level |
+|-----|--------------------|----------------------|------------------|---------------|
+| **C1** | Sustained Attention | Anterior/Middle/Posterior Cingulate | Head & neck movement | Level 1 (High Adaptive) |
+| **C2** | Response Inhibition | Medial Frontal Gyrus | Upper shoulders & diaphragm | Level 2 (Mental Inhibition) |
+| **C3** | Speed of Information Processing | Superior Frontal Gyrus | Deltoid & biceps | Level 3 (Minor Image Distortion) |
+| **C4** | Cognitive Flexibility | Cingulate Gyrus medial cluster | Wrist extension | Level 4 (Disavowal) |
+| **C5** | Multiple Simultaneous Attention | Frontoparietal networks | Triceps | Level 5 (Major Image Distortion) |
+| **C6** | Working Memory | Prefrontal-parietal retrieval loops | Hand & finger flexion | Level 6 (Action-oriented) |
+| **C7** | Category Formation | Cingulate Gyrus medial cluster | Upper limb neuro-sensory | Level 7 (Borderline Defensive) |
+| **C8** | Pattern Recognition & Inductive Thinking | Cerebellar-cortical loop networks | Cardiorespiratory autonomic | Level 8 (Psychotic/Delusional) |
 
 **Key concepts:**
 - **Dominant score** = mode (habitual behaviour, what the student usually does)
@@ -861,11 +949,17 @@ hardware:
   vlm_device: "cuda:0"
 
 vlm:
-  model_id: "Qwen/Qwen2.5-VL-7B-Instruct"
+  model_id: "Qwen/Qwen3-VL-8B-Instruct"
+  load_in_4bit: true          # QLoRA — ~5 GB VRAM
+  load_in_8bit: false
   torch_dtype: "bfloat16"
   attn_implementation: "flash_attention_2"  # Falls back to "eager"
-  max_new_tokens: 2048
-  temperature: 0.05
+  max_new_tokens: 4096
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  repetition_penalty: 1.0
+  do_sample: true
   pdf_render_dpi: 200
   max_pages_per_shard: 3
 
@@ -888,7 +982,7 @@ qdrant:
 chatbot_llm:
   backend: "ollama"
   ollama_base_url: "http://localhost:11434"
-  model_name: "qwen2.5:7b-instruct-q8_0"
+  model_name: "qwen3:8b-q8_0"
   temperature: 0.7
   max_tokens: 1024
   top_p: 0.9
@@ -900,7 +994,7 @@ evaluator_ensemble:
   controversy_threshold: 0.50
   models:
     - name: "qwen3"
-      tag: "qwen2.5:7b-instruct-q8_0"
+      tag: "qwen3:8b-q8_0"
       weight: 1.0
     - name: "mistral"
       tag: "mistral:7b-instruct-v0.2-q8_0"
@@ -1036,9 +1130,9 @@ This is important because processing a single large PISA PDF takes several minut
 
 | Component | Model | Size | Rationale |
 |-----------|-------|------|-----------|
-| VLM (extraction) | Qwen2.5-VL-7B | 7B | Best OCR-free Thai/Math extraction in its class |
+| VLM (extraction) | Qwen3-VL-8B | 8B (QLoRA 4-bit, ~5 GB VRAM) | Latest-gen vision model; superior Thai/Math/multilingual extraction |
 | Embedder | BGE-M3 | 570M | Outperforms larger English-only models on multilingual tasks |
-| Chatbot LLM | Qwen2.5-7B-Instruct | 7B | Strong Thai instruction following |
+| Chatbot LLM | Qwen3-8B-Instruct | 8B | Strong Thai instruction following |
 | Evaluator ensemble | 4 × 7–8B | ~30B total | Majority voting beats single 30B model on ordinal classification |
 
 ---
@@ -1076,7 +1170,8 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8001
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `torch` | 2.2+ | PyTorch with CUDA 12.1 |
-| `transformers` | 4.45+ | Qwen2.5-VL model loading |
+| `transformers` | git (latest) | Qwen3-VL model loading (`pip install git+https://github.com/huggingface/transformers`) |
+| `bitsandbytes` | latest | QLoRA 4-bit quantization for Qwen3-VL |
 | `FlagEmbedding` | 1.2.9+ | BGE-M3 embeddings |
 | `qdrant-client` | 1.9+ | Vector database client |
 | `networkx` | 3.3+ | Knowledge graph (DiGraph) |
@@ -1129,7 +1224,7 @@ pisa_cognitive_tutor/
 ├── src/
 │   ├── ingestion/
 │   │   ├── pdf_processor.py        PDF → PIL image shards (CPU)
-│   │   ├── vlm_extractor.py        Qwen2.5-VL-7B inference + JSON extraction
+│   │   ├── vlm_extractor.py        Qwen3-VL-8B inference + JSON extraction (QLoRA 4-bit)
 │   │   ├── graph_rag_builder.py    NetworkX DiGraph construction + subgraph retrieval
 │   │   └── run_ingestion.py        Pipeline orchestrator (resumable)
 │   │
@@ -1150,9 +1245,10 @@ pisa_cognitive_tutor/
 │   │   └── dspy_optimizer.py       (optional) Auto-tune evaluator prompts
 │   │
 │   ├── metrics/
-│   │   ├── reliability.py          Fleiss' κ, Krippendorff's α, kappa weight update
+│   │   ├── reliability.py          Fleiss' κ, Gwet's AC2, Krippendorff's α, kappa weight update
 │   │   ├── calibration.py          Expected Calibration Error (ECE)
-│   │   └── visualizations.py       Heatmaps, LaTeX export
+│   │   ├── neuro_metrics.py        LCAI, CASM, MCI, PCRS computation + ICP AST calculator
+│   │   └── visualizations.py       Heatmaps, LTA transition plot, LaTeX table export
 │   │
 │   └── api/
 │       └── main.py                 FastAPI REST + WebSocket (production)
@@ -1160,13 +1256,18 @@ pisa_cognitive_tutor/
 ├── frontend/
 │   ├── src/app/
 │   │   ├── page.tsx                Main chat page
-│   │   └── dashboard/page.tsx      Research dashboard (profiles + reliability)
+│   │   ├── dashboard/page.tsx      Research dashboard (profiles + reliability)
+│   │   ├── neuro-framework/page.tsx C1-C8 Taxonomy matrix
+│   │   ├── code-tasks/page.tsx      AST complexity grading
+│   │   └── research-metrics/page.tsx Novel mathematical metrics
 │   ├── src/components/
 │   │   ├── ChatWindow.tsx          WebSocket streaming + file upload UI
 │   │   ├── MessageBubble.tsx       Markdown rendering + KB indicator
 │   │   ├── Sidebar.tsx             Session info + navigation
 │   │   ├── ProfileCard.tsx         Per-student cognitive profile visualisation
-│   │   ├── ReliabilityTable.tsx    Fleiss' κ + Krippendorff's α display
+│   │   ├── ReliabilityTable.tsx    Fleiss' κ + Gwet's AC2 + Krippendorff's α display
+│   │   ├── NeuroTaxonomyTable.tsx  Interactive C1-C8 visualizer
+│   │   ├── CodeTaskAssessor.tsx    AST analysis integration
 │   │   └── TypingIndicator.tsx     Animated dots while streaming
 │   └── src/lib/
 │       ├── api.ts                  Fetch wrappers + WebSocket factory
@@ -1188,8 +1289,15 @@ pisa_cognitive_tutor/
 │   ├── vector_db/
 │   │   ├── qdrant/                 Qdrant local storage directory
 │   │   └── knowledge_graph.gpickle NetworkX DiGraph (pickled)
-│   └── chat_logs/
-│       └── sessions.db            SQLite: sessions + turns + scores tables
+│   ├── chat_logs/
+│   │   └── sessions.db            SQLite: sessions + turns + scores tables
+│   └── reports/                   Generated by run_full_report()
+│       ├── heatmap.png            Spearman correlation C1–C8
+│       ├── icap_distribution.png  ICAP level frequencies
+│       ├── trajectory.png         C4–C8 mean over turn number
+│       ├── duration_scatter.png   Duration vs. C4 score
+│       ├── lta_transitions.png    LTA ICAP state transition matrix (H2)
+│       └── reliability_table.tex  LaTeX: Fleiss' κ, Gwet's AC2, Krippendorff's α
 │
 ├── tests/
 │   ├── test_socratic_prompt.py     Forbidden word detection, Fleiss' κ unit tests
@@ -1233,11 +1341,17 @@ main.py (FastAPI)
     │       ├── majority_voting.py
     │       │       └── hybrid_search.py
     │       └── user_profiler.py
-    └── reliability.py
+    ├── reliability.py               ← Fleiss' κ, Gwet's AC2, Krippendorff's α
+    │       (compute_dimension_reliability, update_model_kappa_weights)
+    └── visualizations.py            ← plots + LTA heatmap + LaTeX export
+            └── reliability.py       (interpret_kappa, interpret_ac2)
 
 # ENFORCED WALL: tutor_engine.py has ZERO imports from src/evaluation/
+# ENFORCED WALL: tutor_engine.py has ZERO imports from src/metrics/
 ```
 
 ---
 
-*This document describes PISA Cognitive Tutor v2.0 as built for NECTEC research. The system operationalises the ICAP Framework to quantify cognitive engagement at scale, enabling measurement of whether Passive → Active → Constructive → Interactive progression correlates with improved learning outcomes.*
+*This document describes PISA Cognitive Tutor v2.0 as built for NECTEC research. The system operationalises the ICAP Framework to quantify cognitive engagement at scale, testing H1–H4 using Gwet's AC2-validated ensemble scoring, Latent Transition Analysis of ICAP state dynamics, and Spearman correlation of response time with causal reasoning depth.*
+
+**Key references:** Chi & Wylie (2014) ICAP Framework · Gwet (2014) AC2 / Kappa Paradox · Qwen3-VL (2025) · BGE-M3 (2024) · Typhoon 2 (2023) · DSPy (2023) · GraphRAG (2024)
