@@ -5,10 +5,11 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+data/
 
 # Data (do not commit raw PDFs or student data)
 data/raw_pdfs/*.pdf
-data/chat_logs/*.db
+data/chat_logs/
 data/chat_logs/*.csv
 data/vector_db/
 data/processed_jsonl/*.jsonl
@@ -93,3 +94,4 @@ docker-compose.override.yml
 .env.docker
 
 # Large files note: use Git LFS for models, vectors, and PDFs
+.claude
