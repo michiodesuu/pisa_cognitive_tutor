@@ -13,6 +13,9 @@ Endpoints:
   GET    /api/metrics/reliability  → inter-rater reliability summary
   GET    /api/metrics/ece          → calibration summary
   POST   /api/analyze              → trigger offline analyzer (admin)
+  GET    /api/neuro/taxonomy       → C1–C8 multi-taxonomy data
+  GET    /api/neuro/metrics        → current LCAI/CASM/MCI/PCRS metric values
+  POST   /api/neuro/code-task      → ICP analysis of submitted code (AST grader)
 
 Run:
   uvicorn src.api.main:app --host 0.0.0.0 --port 8001 --reload
@@ -72,7 +75,7 @@ async def get_resources() -> Dict[str, Any]:
     if _resources:
         return _resources
 
-    cfg = yaml.safe_load(CONFIG_PATH.read_text())
+    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     _resources["cfg"] = cfg
 
     try:
@@ -378,3 +381,114 @@ async def export_scores():
     cols = [d[0] for d in cursor.description]
     conn.close()
     return {"scores": [dict(zip(cols, r)) for r in rows]}
+
+
+# ── Neuro-Software Engineering Endpoints ─────────────────────────────────────
+
+@app.get("/api/neuro/taxonomy")
+async def get_neuro_taxonomy():
+    """
+    Return the full C1–C8 multi-taxonomy dataset.
+    Maps each cognitive dimension to its neuro-structural ALE cluster,
+    somatosensory cervical segment, PSYDEFCONV defense level,
+    clinical criteria, and activity reserve classification.
+    """
+    from ..metrics.neuro_metrics import NEURO_TAXONOMY
+    return {"taxonomy": NEURO_TAXONOMY, "n_dimensions": len(NEURO_TAXONOMY)}
+
+
+class NeuroMetricsRequest(BaseModel):
+    """Optional override parameters for metric computation."""
+    theta_a: float = 0.7         # Age-bracketed white-matter integration
+    kede: float = 20.0           # Knowledge Discovery Efficiency
+    tau: float = 8.5             # Fixation-to-completion latency (seconds)
+    icp_sum: float = 3.0         # Total ICP across active AST nodes
+    lf_hf_ratio: float = 2.1     # HRV spectral ratio
+    rmssd: float = 42.0          # Root mean square successive differences (ms)
+    emg_cervical_delta: float = 0.15  # Normalized trapezius EMG
+    icp_active: float = 3.0      # Active code block ICP
+    adaptive_freqs: List[float] = [0.6, 0.5, 0.4, 0.3]
+    defensive_freqs: List[float] = [0.2, 0.1, 0.1, 0.05]
+    dmrs_weights: Optional[List[float]] = None
+    perplexity: float = 0.3
+    c1_inhibitor: float = 1.25   # Normalized CSF C1-esterase inhibitor (µg/mL)
+    stie1: float = 0.85          # sTie-1 concentration (µg/mL)
+    kede_observed: float = 20.0
+    kede_baseline: float = 20.0
+
+
+@app.get("/api/neuro/metrics")
+async def get_neuro_metrics():
+    """
+    Return current computed values of the four research metrics:
+    LCAI, CASM, MCI, PCRS — using default/simulated parameters.
+    """
+    from ..metrics.neuro_metrics import (
+        compute_lcai, compute_casm, compute_mci, compute_pcrs
+    )
+    lcai = compute_lcai(theta_a=0.7, kede=20.0, tau=8.5, icp_sum=3.0)
+    casm = compute_casm(lf_hf_ratio=2.1, rmssd=42.0, emg_cervical_delta=0.15, icp_active=3.0)
+    mci  = compute_mci(
+        adaptive_freqs=[0.6, 0.5, 0.4, 0.3],
+        defensive_freqs=[0.2, 0.1, 0.1, 0.05],
+        perplexity=0.3
+    )
+    pcrs = compute_pcrs(c1_inhibitor=1.25, stie1=0.85, kede_observed=20.0, casm=casm)
+
+    return {
+        "LCAI": round(lcai, 4),
+        "CASM": round(casm, 4),
+        "MCI":  round(mci, 4),
+        "PCRS": round(pcrs, 4),
+        "note": "Computed using default/simulated telemetry parameters"
+    }
+
+
+class CodeTaskRequest(BaseModel):
+    task_id: int         # 1, 2, or 3
+    code: str            # User-submitted code to analyze
+    language: str = "python"
+
+
+@app.post("/api/neuro/code-task")
+async def analyze_code_task(req: CodeTaskRequest):
+    """
+    Accept user-submitted code for one of the three cognitive assessment tasks.
+    Performs:
+      1. ICP heuristic analysis (AST-based complexity scoring)
+      2. Comparison against expected ICP reduction targets
+      3. Returns feedback and cognitive dimension assessment
+    """
+    from ..metrics.neuro_metrics import estimate_icp_from_code
+
+    task_targets = {
+        1: {"name": "Recursive State Refactoring", "target_icp": 1, "dims": ["C6", "C4"]},
+        2: {"name": "Distractor-Heavy Debugging",   "target_icp": 0, "dims": ["C1", "C2"]},
+        3: {"name": "Algorithmic Pattern Synthesis","target_icp": 1, "dims": ["C8", "C7"]},
+    }
+
+    if req.task_id not in task_targets:
+        raise HTTPException(status_code=400, detail="task_id must be 1, 2, or 3")
+
+    target = task_targets[req.task_id]
+    icp_result = estimate_icp_from_code(req.code)
+    total_icp = icp_result["total_icp"]
+    target_icp = target["target_icp"]
+
+    achieved = total_icp <= target_icp
+    feedback = (
+        f"✓ ICP = {total_icp} meets target (≤{target_icp}). Working memory load reduced."
+        if achieved else
+        f"⚠ ICP = {total_icp} exceeds target ({target_icp}). "
+        f"Consider flattening control flow and reducing nesting."
+    )
+
+    return {
+        "task_id": req.task_id,
+        "task_name": target["name"],
+        "target_dimensions": target["dims"],
+        "icp_analysis": icp_result,
+        "target_icp": target_icp,
+        "achieved": achieved,
+        "feedback": feedback,
+    }

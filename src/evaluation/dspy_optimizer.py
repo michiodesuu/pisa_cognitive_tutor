@@ -76,7 +76,7 @@ class DSPyOptimizer:
     """
 
     def __init__(self, config_path: Path):
-        self.cfg = yaml.safe_load(config_path.read_text())
+        self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.dspy_cfg = self.cfg["dspy"]
         self.config_path = config_path
 

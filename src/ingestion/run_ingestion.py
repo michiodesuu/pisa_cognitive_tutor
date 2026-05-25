@@ -69,7 +69,7 @@ def _load_processed_files(jsonl_path: Path) -> Set[str]:
 
 
 async def run_pipeline(config_path: Path):
-    cfg = yaml.safe_load(config_path.read_text())
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     kb_cfg = cfg["knowledge_base"]
 
     raw_dir = Path("data/raw_pdfs")

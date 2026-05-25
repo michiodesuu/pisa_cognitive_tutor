@@ -88,7 +88,7 @@ class AnalyzerPipeline:
     """
 
     def __init__(self, config_path: Path):
-        self.cfg = yaml.safe_load(config_path.read_text())
+        self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.config_path = config_path
         self.db_path = Path(self.cfg["session_db"]["path"])
         self.voter: MajorityVoter = MajorityVoter(config_path)

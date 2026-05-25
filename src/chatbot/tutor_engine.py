@@ -53,23 +53,28 @@ class TutorEngine:
     """
 
     def __init__(self, config_path: Path, searcher, graph=None):
-        self.cfg = yaml.safe_load(config_path.read_text())
+        self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.searcher = searcher
         self.graph = graph
         self._system_prompt = (
-            Path("configs/prompts/socratic_tutor.txt").read_text().strip()
+            Path("configs/prompts/socratic_tutor.txt").read_text(encoding="utf-8").strip()
         )
         self._llm_cfg = self.cfg["chatbot_llm"]
 
     # ── context retrieval ────────────────────────────────────────────────────
 
-    def _retrieve_context(self, user_message: str) -> tuple[str, bool]:
+    async def _retrieve_context(self, user_message: str) -> tuple[str, bool]:
         """
         Returns (context_block, kb_used_flag).
-        Combines vector search results with graph subgraph summary.
+        Runs BGE-M3 search in a thread so it doesn't block the event loop.
         """
+        import asyncio
+        loop = asyncio.get_event_loop()
+
         try:
-            results = self.searcher.search(user_message, top_k=5)
+            results = await loop.run_in_executor(
+                None, lambda: self.searcher.search(user_message, top_k=5)
+            )
             vector_ctx = self.searcher.format_context_for_prompt(results)
         except Exception as e:
             logger.warning(f"[Tutor] Retrieval failed: {e}")
@@ -79,12 +84,14 @@ class TutorEngine:
         graph_ctx = ""
         if self.graph is not None and results:
             from ..ingestion.graph_rag_builder import KnowledgeGraphBuilder
-            # Use top result's concept as seed
             seed = results[0].get("correct_concept", user_message)
-            gctx = KnowledgeGraphBuilder.get_subgraph_context(
-                self.graph, seed,
-                max_hops=self.cfg["graph"]["max_hops"],
-                max_nodes=self.cfg["graph"]["max_subgraph_nodes"],
+            gctx = await loop.run_in_executor(
+                None,
+                lambda: KnowledgeGraphBuilder.get_subgraph_context(
+                    self.graph, seed,
+                    max_hops=self.cfg["graph"]["max_hops"],
+                    max_nodes=self.cfg["graph"]["max_subgraph_nodes"],
+                ),
             )
             graph_ctx = f"\nGraph context: {gctx['graph_summary']}"
 
@@ -136,13 +143,18 @@ class TutorEngine:
             "model": self._llm_cfg["model_name"],
             "messages": messages,
             "stream": True,
+            "think": False,  # disable Qwen3 extended thinking — prevents multi-minute waits
             "options": {
                 "temperature": self._llm_cfg["temperature"],
                 "num_predict": self._llm_cfg["max_tokens"],
                 "top_p": self._llm_cfg["top_p"],
+                "num_ctx": 8192,  # ensure enough context for full history + system prompt
             },
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        # connect=10s, read=300s — connect must be fast; reading a full streamed
+        # response can legitimately take minutes on a slow GPU
+        timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream("POST", url, json=payload) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -205,7 +217,7 @@ class TutorEngine:
               full_response += token
               cl_msg.stream_token(token)
         """
-        context, kb_used = self._retrieve_context(user_message)
+        context, kb_used = await self._retrieve_context(user_message)
         messages = self._build_messages(
             user_message, history, context, turn_number,
             file_context=file_context,     # ← ADD THIS ARGUMENT
@@ -227,7 +239,10 @@ class TutorEngine:
                 first = False
 
         except Exception as e:
-            logger.error(f"[Tutor] LLM streaming failed: {e}")
+            logger.error(
+                f"[Tutor] LLM streaming failed ({type(e).__name__}): {e}",
+                exc_info=True,
+            )
             fallback = (
                 "I seem to be having trouble thinking right now. "
                 "Could you rephrase what you were exploring?"

@@ -58,7 +58,7 @@ class KnowledgeGraphBuilder:
     """
 
     def __init__(self, config_path: Path):
-        cfg = yaml.safe_load(config_path.read_text())
+        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.graph_path = Path(cfg["graph"]["storage_path"])
         self.max_hops: int = cfg["graph"]["max_hops"]
         self.max_subgraph_nodes: int = cfg["graph"]["max_subgraph_nodes"]
@@ -148,7 +148,7 @@ class KnowledgeGraphBuilder:
 
     @staticmethod
     def load(config_path: Path) -> nx.DiGraph:
-        cfg = yaml.safe_load(config_path.read_text())
+        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         graph_path = Path(cfg["graph"]["storage_path"])
         if not graph_path.exists():
             logger.warning("[Graph] No graph file found — returning empty graph")

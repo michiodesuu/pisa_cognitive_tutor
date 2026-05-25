@@ -35,7 +35,7 @@ class QdrantHybridSearch:
     """
 
     def __init__(self, config_path: Path, embedder):
-        self.cfg = yaml.safe_load(config_path.read_text())
+        self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.embedder = embedder
         self._client = None
         self._collection_name: str = self.cfg["qdrant"]["collection_name"]

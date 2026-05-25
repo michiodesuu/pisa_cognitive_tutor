@@ -18,6 +18,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Optional
 
 import chainlit as cl
+import httpx
 import yaml
 
 CONFIG_PATH = Path(os.getenv("CONFIG_PATH", "configs/model_configs.yaml"))
@@ -40,61 +42,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger("chatbot.app")
 
-# ── Global singletons (initialised on startup) ────────────────────────────────
+# ── Global singletons ─────────────────────────────────────────────────────────
 _searcher = None
 _graph = None
 _session_manager = None
 _cfg = None
+# Sentinel: True = init attempted (success or failure). Prevents retrying the
+# slow BGE-M3 load on every session when initialization previously failed.
+_heavy_init_done = False
 
 
 @cl.on_chat_start
 async def on_chat_start():
     """Initialise resources for this chat session."""
-    global _searcher, _graph, _session_manager, _cfg
+    global _searcher, _graph, _session_manager, _cfg, _heavy_init_done
 
-    # ── Lazy-load singletons ──────────────────────────────────────────────
     if _cfg is None:
-        _cfg = yaml.safe_load(CONFIG_PATH.read_text())
+        _cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
-    if _searcher is None:
-        try:
-            from ..retrieval.embedder import BGEEmbedder
-            from ..retrieval.hybrid_search import QdrantHybridSearch
-
-            embedder = BGEEmbedder(CONFIG_PATH)
-            _searcher = QdrantHybridSearch(CONFIG_PATH, embedder)
-            logger.info("[App] Qdrant searcher initialized")
-        except Exception as e:
-            logger.error(f"[App] Could not initialize searcher: {e}")
-
-    if _graph is None:
-        try:
-            from ..ingestion.graph_rag_builder import KnowledgeGraphBuilder
-            _graph = KnowledgeGraphBuilder.load(CONFIG_PATH)
-            logger.info("[App] Knowledge graph loaded")
-        except Exception as e:
-            logger.warning(f"[App] Could not load graph: {e}")
-
+    # ── Session manager (fast — just SQLite) ──────────────────────────────
     if _session_manager is None:
         from .session_manager import SessionManager
         _session_manager = await SessionManager.create(CONFIG_PATH)
         logger.info("[App] Session manager initialized")
 
-    # ── Per-session state (stored in cl.user_session) ─────────────────────
     user_id = f"student_{uuid.uuid4().hex[:8]}"
     session_id = await _session_manager.new_session(user_id=user_id)
-
-    from .tutor_engine import TutorEngine
-    engine = TutorEngine(CONFIG_PATH, _searcher, _graph)
 
     cl.user_session.set("user_id", user_id)
     cl.user_session.set("session_id", session_id)
     cl.user_session.set("turn_number", 0)
-    cl.user_session.set("engine", engine)
     cl.user_session.set("last_ai_time", time.perf_counter())
     cl.user_session.set("history", [])
 
-    # ── Welcome message ───────────────────────────────────────────────────
+    # ── Welcome message — shown immediately, before any slow init ─────────
     await cl.Message(
         content=(
             "👋 **Welcome to the PISA Science Tutor**\n\n"
@@ -106,6 +87,69 @@ async def on_chat_start():
         ),
         author="Tutor",
     ).send()
+
+    # ── Ollama health check (fast) ────────────────────────────────────────
+    ollama_url = _cfg["chatbot_llm"]["ollama_base_url"]
+    ollama_model = _cfg["chatbot_llm"]["model_name"]
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as _hc:
+            tags = (await _hc.get(f"{ollama_url}/api/tags")).json()
+            available = [m["name"] for m in tags.get("models", [])]
+            if not any(ollama_model in name for name in available):
+                logger.warning(
+                    f"[App] Model '{ollama_model}' not found in Ollama. "
+                    f"Available: {available}. Run: ollama pull {ollama_model}"
+                )
+                await cl.Message(
+                    content=(
+                        f"⚠️ **Model not loaded**: `{ollama_model}` is not available in Ollama.\n\n"
+                        f"Run this in a terminal, then refresh:\n"
+                        f"```\nollama pull {ollama_model}\n```"
+                    ),
+                    author="System",
+                ).send()
+    except Exception as e:
+        logger.error(f"[App] Ollama not reachable at {ollama_url}: {e}")
+        await cl.Message(
+            content=(
+                "⚠️ **AI backend unavailable**: Ollama is not running.\n\n"
+                "Start it in a terminal, then refresh this page:\n"
+                "```\nollama serve\n```"
+            ),
+            author="System",
+        ).send()
+
+    # ── Heavy init: BGE-M3 + Qdrant + graph — only once, in a thread ─────
+    # run_in_executor keeps the event loop unblocked so other sessions can
+    # start while this one loads the ~570 MB embedding model.
+    if not _heavy_init_done:
+        _heavy_init_done = True  # set before await — blocks concurrent inits
+        loop = asyncio.get_event_loop()
+
+        try:
+            from ..retrieval.embedder import BGEEmbedder
+            from ..retrieval.hybrid_search import QdrantHybridSearch
+            embedder = await loop.run_in_executor(
+                None, lambda: BGEEmbedder(CONFIG_PATH)
+            )
+            _searcher = QdrantHybridSearch(CONFIG_PATH, embedder)
+            logger.info("[App] Qdrant searcher initialized")
+        except Exception as e:
+            logger.error(f"[App] Could not initialize searcher: {e}")
+
+        try:
+            from ..ingestion.graph_rag_builder import KnowledgeGraphBuilder
+            _graph = await loop.run_in_executor(
+                None, lambda: KnowledgeGraphBuilder.load(CONFIG_PATH)
+            )
+            logger.info("[App] Knowledge graph loaded")
+        except Exception as e:
+            logger.warning(f"[App] Could not load graph: {e}")
+
+    # ── Create engine (after init so it gets the real _searcher/_graph) ───
+    from .tutor_engine import TutorEngine
+    engine = TutorEngine(CONFIG_PATH, _searcher, _graph)
+    cl.user_session.set("engine", engine)
 
     logger.info(f"[App] New session: {session_id} | user: {user_id}")
 
@@ -156,13 +200,12 @@ async def on_message(message: cl.Message):
     # ── Update session state ──────────────────────────────────────────────
     history.append({"role": "user", "content": user_text})
     history.append({"role": "assistant", "content": full_response})
-    # Keep last 12 turns in memory context
     if len(history) > 24:
         history = history[-24:]
     cl.user_session.set("history", history)
     cl.user_session.set("last_ai_time", time.perf_counter())
 
-    # ── Persist turn to SQLite ────────────────────────────────────────────
+    # ── Persist turn to SQLite + CSV ──────────────────────────────────────
     if _session_manager:
         try:
             await _session_manager.record_turn(

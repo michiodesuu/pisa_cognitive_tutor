@@ -20,6 +20,7 @@ Duration_Sec is a cognitive depth proxy:
 from __future__ import annotations
 
 import asyncio
+import csv
 import logging
 import time
 import uuid
@@ -77,13 +78,26 @@ class SessionManager:
                               kb_context_used=True, duration_sec=18.3)
     """
 
+    CSV_COLUMNS = [
+        "timestamp", "session_id", "user_id", "turn_number",
+        "user_input", "ai_response", "kb_context_used",
+        "duration_sec", "question_topic",
+    ]
+
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        self.csv_path = db_path.parent / "conversations.csv"
         self._db: Optional[aiosqlite.Connection] = None
+        self._ensure_csv_header()
+
+    def _ensure_csv_header(self):
+        if not self.csv_path.exists():
+            with self.csv_path.open("w", newline="", encoding="utf-8") as f:
+                csv.DictWriter(f, fieldnames=self.CSV_COLUMNS).writeheader()
 
     @classmethod
     async def create(cls, config_path: Path) -> "SessionManager":
-        cfg = yaml.safe_load(config_path.read_text())
+        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         db_path = Path(cfg["session_db"]["path"])
         db_path.parent.mkdir(parents=True, exist_ok=True)
         mgr = cls(db_path)
@@ -145,6 +159,21 @@ class SessionManager:
             ),
         )
         await self._db.commit()
+
+        # Mirror to CSV
+        row = {
+            "timestamp": timestamp,
+            "session_id": session_id,
+            "user_id": user_id,
+            "turn_number": turn_number,
+            "user_input": user_input,
+            "ai_response": ai_response,
+            "kb_context_used": int(kb_context_used),
+            "duration_sec": round(duration_sec, 2),
+            "question_topic": question_topic,
+        }
+        with self.csv_path.open("a", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=self.CSV_COLUMNS).writerow(row)
 
     async def get_session_turns(
         self, session_id: str

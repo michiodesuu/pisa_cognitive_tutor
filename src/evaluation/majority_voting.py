@@ -35,7 +35,7 @@ KAPPA_WEIGHTS_PATH = Path("data/processed_jsonl/model_kappa_weights.json")
 def _load_kappa_weights(cfg: dict) -> Dict[str, float]:
     """Load per-model Fleiss' Kappa weights.  Defaults to 1.0 if not yet computed."""
     if KAPPA_WEIGHTS_PATH.exists():
-        return json.loads(KAPPA_WEIGHTS_PATH.read_text())
+        return json.loads(KAPPA_WEIGHTS_PATH.read_text(encoding="utf-8"))
     # Equal weights by default
     return {m["name"]: 1.0 for m in cfg["evaluator_ensemble"]["models"]}
 
@@ -159,7 +159,7 @@ class MajorityVoter:
     """
 
     def __init__(self, config_path: Path):
-        self.cfg = yaml.safe_load(config_path.read_text())
+        self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         ens_cfg = self.cfg["evaluator_ensemble"]
         self.kappa_weights = _load_kappa_weights(self.cfg)
         self.models = [
@@ -169,7 +169,7 @@ class MajorityVoter:
         for m in self.models:
             m.weight = self.kappa_weights.get(m.name, 1.0)
 
-        self.rubric_text = Path("configs/prompts/evaluator_judge.txt").read_text().strip()
+        self.rubric_text = Path("configs/prompts/evaluator_judge.txt").read_text(encoding="utf-8").strip()
         self.consensus_threshold: float = ens_cfg["consensus_threshold"]
         self.controversy_threshold: float = ens_cfg["controversy_threshold"]
 

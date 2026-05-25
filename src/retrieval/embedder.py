@@ -47,7 +47,7 @@ class BGEEmbedder:
     """
 
     def __init__(self, config_path: Path):
-        self.cfg = yaml.safe_load(config_path.read_text())
+        self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self._model = None
         self.batch_size: int = self.cfg["embedding"]["batch_size"]
         self.max_length: int = self.cfg["embedding"]["max_length"]

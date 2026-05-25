@@ -156,8 +156,8 @@ class VLMExtractor:
     """
 
     def __init__(self, config_path: Path, prompt_path: Path):
-        self.cfg = yaml.safe_load(config_path.read_text())
-        self.system_prompt = prompt_path.read_text().strip()
+        self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.system_prompt = prompt_path.read_text(encoding="utf-8").strip()
         self._model = None
         self._processor = None
 

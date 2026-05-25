@@ -49,7 +49,7 @@ class UserProfiler:
 
     @classmethod
     async def create(cls, config_path: Path) -> "UserProfiler":
-        cfg = yaml.safe_load(config_path.read_text())
+        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         return cls(Path(cfg["session_db"]["path"]))
 
     async def _fetch_scores(self) -> List[Dict[str, Any]]:
