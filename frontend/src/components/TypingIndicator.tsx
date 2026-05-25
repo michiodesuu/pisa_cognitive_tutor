@@ -1,22 +1,29 @@
 "use client";
-import { BookOpen } from "lucide-react";
 
 export default function TypingIndicator() {
   return (
-    <div className="flex gap-3">
-      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white">
-        <BookOpen size={16} />
+    <div className="flex items-center gap-3 px-4 py-3">
+      <div
+        className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{ background: "rgba(0,180,204,0.1)", border: "1px solid rgba(0,180,204,0.25)" }}
+      >
+        <span className="text-neuro-400 text-xs">AI</span>
       </div>
-      <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-none px-4 py-3 shadow-sm">
-        <div className="flex items-center gap-1.5 h-4">
-          {[0, 150, 300].map((delay) => (
-            <span
-              key={delay}
-              className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"
-              style={{ animationDelay: `${delay}ms` }}
-            />
-          ))}
-        </div>
+      <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl rounded-tl-sm
+                      bg-[var(--bg-secondary)] border border-[var(--border-color)]">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-neuro-400"
+            style={{ animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
+          />
+        ))}
+        <style jsx>{`
+          @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+            40% { transform: translateY(-5px); opacity: 1; }
+          }
+        `}</style>
       </div>
     </div>
   );

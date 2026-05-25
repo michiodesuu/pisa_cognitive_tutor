@@ -17,18 +17,33 @@ export async function getHistory(sessionId: string) {
 }
 
 export async function getProfiles() {
-  const res = await fetch(`${API_URL}/api/profiles`);
-  return res.json();
+  try {
+    const res = await fetch(`${API_URL}/api/profiles`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } catch {
+    return { profiles: {} };
+  }
 }
 
 export async function getReliability() {
-  const res = await fetch(`${API_URL}/api/metrics/reliability`);
-  return res.json();
+  try {
+    const res = await fetch(`${API_URL}/api/metrics/reliability`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function triggerAnalyze() {
-  const res = await fetch(`${API_URL}/api/analyze`, { method: "POST" });
-  return res.json();
+  try {
+    const res = await fetch(`${API_URL}/api/analyze`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 export function createChatWebSocket(sessionId: string): WebSocket {
@@ -42,7 +57,7 @@ export async function uploadFile(
 ): Promise<{
   file_id: string;
   filename: string;
-  file_type: string;
+  file_type: "image" | "table" | "pdf" | "text";
   description_preview: string;
 }> {
   const form = new FormData();

@@ -2,21 +2,248 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { --brand: #0c84e8; }
+/* ─── Google Fonts ──────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
-html, body { height: 100%; margin: 0; }
+/* ─── KaTeX ──────────────────────────────────────────────────────────────────── */
+@import url('https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css');
 
-/* Markdown prose inside chat bubbles */
+/* ─── CSS Variables ─────────────────────────────────────────────────────────── */
+:root {
+  /* Light theme */
+  --bg-primary:    #f8fafc;
+  --bg-secondary:  #ffffff;
+  --bg-tertiary:   #f1f5f9;
+  --border-color:  #e2e8f0;
+  --text-primary:  #0f172a;
+  --text-secondary:#475569;
+  --text-muted:    #94a3b8;
+  --brand:         #0c84e8;
+  --brand-glow:    rgba(12, 132, 232, 0.2);
+  --neuro-cyan:    #00b4cc;
+  --neuro-purple:  #a855f7;
+  --card-bg:       rgba(255,255,255,0.85);
+  --card-border:   rgba(0,0,0,0.08);
+  --sidebar-bg:    #0f172a;
+  --glass-bg:      rgba(255,255,255,0.7);
+  --glass-border:  rgba(255,255,255,0.8);
+}
+
+.dark {
+  --bg-primary:    #080f1e;
+  --bg-secondary:  #0f172a;
+  --bg-tertiary:   #1e293b;
+  --border-color:  rgba(255,255,255,0.08);
+  --text-primary:  #f1f5f9;
+  --text-secondary:#94a3b8;
+  --text-muted:    #475569;
+  --brand:         #36a0f7;
+  --brand-glow:    rgba(54, 160, 247, 0.25);
+  --neuro-cyan:    #06cee8;
+  --neuro-purple:  #c084fc;
+  --card-bg:       rgba(15,23,42,0.8);
+  --card-border:   rgba(255,255,255,0.08);
+  --sidebar-bg:    #062f3d;
+  --glass-bg:      rgba(15,23,42,0.6);
+  --glass-border:  rgba(0,180,204,0.15);
+}
+
+/* ─── Base ───────────────────────────────────────────────────────────────────── */
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ─── Glassmorphism ─────────────────────────────────────────────────────────── */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: var(--neuro-cyan);
+  box-shadow: 0 0 20px rgba(0,180,204,0.12), 0 4px 24px rgba(0,0,0,0.2);
+}
+
+.dark .glass-card {
+  box-shadow: 0 0 20px rgba(0,180,204,0.08), 0 4px 24px rgba(0,0,0,0.4);
+}
+
+/* ─── Neuro Glow Borders ─────────────────────────────────────────────────────── */
+.neuro-border {
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+.neuro-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--neuro-cyan), var(--neuro-purple));
+  z-index: -1;
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+.neuro-border:hover::before { opacity: 0.8; }
+
+/* ─── Neuro Badges ───────────────────────────────────────────────────────────── */
+.badge-cyan {
+  background: linear-gradient(135deg, rgba(0,180,204,0.15), rgba(0,180,204,0.05));
+  border: 1px solid rgba(0,180,204,0.3);
+  color: #00b4cc;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.dark .badge-cyan { color: #06cee8; border-color: rgba(6,206,232,0.35); }
+
+.badge-purple {
+  background: linear-gradient(135deg, rgba(168,85,247,0.15), rgba(168,85,247,0.05));
+  border: 1px solid rgba(168,85,247,0.3);
+  color: #9333ea;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.dark .badge-purple { color: #c084fc; border-color: rgba(192,132,252,0.35); }
+
+/* ─── Dimension Color Accents ────────────────────────────────────────────────── */
+.dim-c1 { --dim-color: #ef4444; }
+.dim-c2 { --dim-color: #f97316; }
+.dim-c3 { --dim-color: #eab308; }
+.dim-c4 { --dim-color: #22c55e; }
+.dim-c5 { --dim-color: #14b8a6; }
+.dim-c6 { --dim-color: #3b82f6; }
+.dim-c7 { --dim-color: #8b5cf6; }
+.dim-c8 { --dim-color: #ec4899; }
+
+/* ─── KaTeX overrides ────────────────────────────────────────────────────────── */
+.dark .katex { color: #e2e8f0; }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.5rem 0; }
+.katex-formula-block {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+}
+.dark .katex-formula-block {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.08);
+}
+
+/* ─── Code Highlighting Overrides ───────────────────────────────────────────── */
 .prose-chat p { margin: 0 0 0.5rem 0; }
 .prose-chat p:last-child { margin-bottom: 0; }
 .prose-chat code {
   background: rgba(0,0,0,0.08);
   border-radius: 3px;
   padding: 1px 4px;
-  font-family: "JetBrains Mono", monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 0.85em;
 }
+.dark .prose-chat code { background: rgba(255,255,255,0.1); }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+/* ─── Code Task Panels ───────────────────────────────────────────────────────── */
+.code-task-panel {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+.code-task-header {
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.dark .code-task-header { background: rgba(255,255,255,0.04); }
+
+/* ─── Neural Network Background ──────────────────────────────────────────────── */
+.neuro-bg-pattern {
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(0,180,204,0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(168,85,247,0.05) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(12,132,232,0.03) 0%, transparent 70%);
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.5); }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+.dark ::-webkit-scrollbar-thumb:hover { background: rgba(0,180,204,0.3); }
+
+/* ─── Animated Gradient Text ─────────────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--neuro-cyan), var(--neuro-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Pulse Dot ──────────────────────────────────────────────────────────────── */
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+}
+.pulse-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.3;
+  animation: ping 1.5s cubic-bezier(0,0,0.2,1) infinite;
+}
+@keyframes ping {
+  75%,100% { transform: scale(2); opacity: 0; }
+}
+
+/* ─── ICAP Level Colors ─────────────────────────────────────────────────────── */
+.icap-passive      { color: #ef4444; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.25); }
+.icap-active       { color: #f97316; background: rgba(249,115,22,0.1); border-color: rgba(249,115,22,0.25); }
+.icap-constructive { color: #22c55e; background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.25); }
+.icap-interactive  { color: #3b82f6; background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.25); }
+
+/* ─── Metric Gauge ───────────────────────────────────────────────────────────── */
+.gauge-ring {
+  stroke-dasharray: 251.2;
+  stroke-linecap: round;
+  transform-origin: center;
+  transform: rotate(-90deg);
+  transition: stroke-dashoffset 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ─── Tab Switcher ───────────────────────────────────────────────────────────── */
+.tab-active {
+  background: linear-gradient(135deg, rgba(0,180,204,0.15), rgba(168,85,247,0.1));
+  border-color: rgba(0,180,204,0.4) !important;
+  color: var(--neuro-cyan) !important;
+}
+
+/* ─── Utility Classes ────────────────────────────────────────────────────────── */
+.transition-theme {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}

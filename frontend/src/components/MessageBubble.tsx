@@ -1,9 +1,7 @@
 "use client";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { BookOpen, User } from "lucide-react";
 import type { ChatMessage } from "@/lib/types";
-import clsx from "clsx";
+import { BookOpen } from "lucide-react";
 
 interface Props { message: ChatMessage; }
 
@@ -11,48 +9,44 @@ export default function MessageBubble({ message }: Props) {
   const isUser = message.role === "user";
 
   return (
-    <div className={clsx("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
+    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"} items-end`}>
       {/* Avatar */}
-      <div className={clsx(
-        "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm",
-        isUser ? "bg-brand-600" : "bg-gray-700"
-      )}>
-        {isUser ? <User size={16} /> : <BookOpen size={16} />}
+      <div
+        className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-xs font-bold
+          ${isUser
+            ? "bg-neuro-500/15 border border-neuro-500/30 text-neuro-400"
+            : "bg-purple-500/15 border border-purple-500/30 text-purple-400"
+          }`}
+      >
+        {isUser ? "You" : "AI"}
       </div>
 
       {/* Bubble */}
-      <div className={clsx(
-        "max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
-        isUser
-          ? "bg-brand-600 text-white rounded-tr-none"
-          : "bg-white border border-gray-200 text-gray-800 rounded-tl-none shadow-sm"
-      )}>
-        {isUser ? (
-          <p className="whitespace-pre-wrap">{message.content}</p>
-        ) : (
-          <div className="prose-chat prose prose-sm max-w-none prose-gray">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
-          </div>
-        )}
+      <div
+        className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed
+          ${isUser
+            ? "rounded-br-sm bg-neuro-500/15 border border-neuro-500/20 text-[var(--text-primary)]"
+            : "rounded-bl-sm bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-secondary)]"
+          }`}
+      >
+        <div className="prose-chat">
+          <ReactMarkdown>{message.content}</ReactMarkdown>
+        </div>
 
-        {/* Metadata row */}
-        <div className={clsx(
-          "flex items-center gap-2 mt-1.5 text-xs",
-          isUser ? "text-blue-200 justify-end" : "text-gray-400"
-        )}>
-          <span>
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </span>
-          {isUser && message.duration_sec !== undefined && (
-            <span>· {message.duration_sec.toFixed(1)}s</span>
+        {/* Footer */}
+        <div className={`flex items-center gap-2 mt-2 text-[10px] ${isUser ? "justify-end" : "justify-start"}`}>
+          {message.duration_sec !== undefined && (
+            <span className="text-[var(--text-muted)]">{message.duration_sec.toFixed(1)}s</span>
           )}
-          {!isUser && message.kb_used && (
-            <span className="flex items-center gap-1 text-brand-500">
-              <BookOpen size={10} /> KB
+          {message.kb_used && (
+            <span className="flex items-center gap-1 text-neuro-500 dark:text-neuro-400">
+              <BookOpen size={10} />
+              KB
             </span>
           )}
+          <span className="text-[var(--text-muted)]">
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
         </div>
       </div>
     </div>

@@ -1,18 +1,32 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin", "latin-ext"] });
-
 export const metadata: Metadata = {
-  title: "PISA Cognitive Tutor",
-  description: "AI-powered Socratic science tutor for cognitive research",
+  title: "PISA Cognitive Tutor · C1–C8 Neuro-Software Framework",
+  description:
+    "AI-powered Socratic science tutor with Computational Neuro-Software Engineering C1–C8 cognitive analysis, KEDE metrics, and physiological telemetry for cognitive research",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
-      <body className={`${inter.className} h-full bg-gray-50 text-gray-900 antialiased`}>
+    <html lang="en" className="h-full" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('theme');
+                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                  }
+                } catch(e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
+      <body className="h-full bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased font-sans transition-theme">
         {children}
       </body>
     </html>

@@ -235,28 +235,28 @@ export default function ChatWindow({ sessionId, userId }: Props) {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute inset-0 z-50 flex items-center justify-center
-                       bg-brand-50/90 border-4 border-dashed border-brand-400 rounded-xl"
+                       bg-neuro-500/10 border-4 border-dashed border-neuro-400/60 rounded-xl backdrop-blur-sm"
           >
-            <p className="text-brand-600 font-semibold text-xl">Drop files here</p>
+            <p className="text-neuro-400 font-semibold text-xl">Drop files here</p>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <header className="flex items-center gap-3 px-6 py-4 border-b border-gray-200 bg-white">
+      <header className="flex items-center gap-3 px-6 py-4 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] transition-theme">
         <div className="flex-1">
-          <h1 className="font-semibold text-gray-900">PISA Science Tutor</h1>
-          <p className="text-xs text-gray-400">Turn {turnNumber} · {userId}</p>
+          <h1 className="font-semibold text-[var(--text-primary)] font-display">PISA Science Tutor</h1>
+          <p className="text-xs text-[var(--text-muted)]">Turn {turnNumber} · {userId}</p>
         </div>
         <div className={`flex items-center gap-1.5 text-xs font-medium
-          ${isConnected ? "text-green-600" : "text-red-500"}`}>
+          ${isConnected ? "text-neuro-500 dark:text-neuro-400" : "text-red-500"}`}>
           {isConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
           {isConnected ? "Connected" : "Reconnecting…"}
         </div>
       </header>
 
       {/* ── Messages ──────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 bg-[var(--bg-primary)] transition-theme">
         <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <motion.div key={msg.id}
@@ -282,7 +282,7 @@ export default function ChatWindow({ sessionId, userId }: Props) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="border-t border-gray-100 bg-gray-50 px-4 py-2 overflow-hidden"
+            className="border-t border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-2 overflow-hidden transition-theme"
           >
             <div className="flex flex-wrap gap-2 max-w-3xl mx-auto">
               {uploads.map((u) => (
@@ -356,7 +356,7 @@ export default function ChatWindow({ sessionId, userId }: Props) {
       </AnimatePresence>
 
       {/* ── Input bar ─────────────────────────────────────────────────────── */}
-      <div className="border-t border-gray-200 bg-white px-4 py-4">
+      <div className="border-t border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-4 transition-theme">
         <div className="flex items-end gap-2 max-w-3xl mx-auto">
           {/* Hidden file input */}
           <input
@@ -377,10 +377,10 @@ export default function ChatWindow({ sessionId, userId }: Props) {
             disabled={isStreaming || !isConnected}
             title="Attach image, PDF, CSV, or text"
             className="flex-shrink-0 flex items-center justify-center w-10 h-10
-                       rounded-xl border border-gray-300 text-gray-500
-                       hover:border-brand-400 hover:text-brand-600
+                       rounded-xl border border-[var(--border-color)] text-[var(--text-muted)]
+                       hover:border-neuro-500/60 hover:text-neuro-500
                        disabled:opacity-40 disabled:cursor-not-allowed
-                       transition-colors"
+                       transition-all"
           >
             <Paperclip size={17} />
           </button>
@@ -397,10 +397,10 @@ export default function ChatWindow({ sessionId, userId }: Props) {
                 ? "Uploading…"
                 : "Type your answer or attach a file…"
             }
-            className="flex-1 resize-none rounded-xl border border-gray-300 bg-gray-50
-                       px-4 py-3 text-sm text-gray-900 placeholder-gray-400
-                       focus:outline-none focus:ring-2 focus:ring-brand-500
-                       focus:border-transparent disabled:opacity-50 max-h-32 overflow-y-auto"
+            className="flex-1 resize-none rounded-xl border border-[var(--border-color)] bg-[var(--bg-tertiary)]
+                       px-4 py-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]
+                       focus:outline-none focus:ring-2 focus:ring-neuro-500
+                       focus:border-transparent disabled:opacity-50 max-h-32 overflow-y-auto transition-theme"
             style={{ minHeight: "48px" }}
             onInput={(e) => {
               const el = e.currentTarget;
@@ -413,9 +413,10 @@ export default function ChatWindow({ sessionId, userId }: Props) {
             onClick={sendMessage}
             disabled={!canSend || pendingUploads.length > 0}
             className="flex-shrink-0 flex items-center justify-center w-12 h-12
-                       rounded-xl bg-brand-600 text-white
-                       hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed
-                       transition-colors"
+                       rounded-xl bg-neuro-500 text-white
+                       hover:bg-neuro-400 disabled:opacity-40 disabled:cursor-not-allowed
+                       transition-all shadow-[0_0_16px_rgba(0,180,204,0.3)]
+                       hover:shadow-[0_0_24px_rgba(0,180,204,0.5)]"
           >
             <Send size={18} />
           </button>
