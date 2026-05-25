@@ -109,3 +109,106 @@ forbidden_chatbot_words:
   - "ถูกต้อง"      # Thai: correct
   - "ผิด"          # Thai: wrong
   - "เก่งมาก"      # Thai: very good
+
+# ─── C1–C8 Neuro-Software Engineering Multi-Taxonomy ──────────────────────────
+# Maps each ICAP cognitive dimension to its multi-disciplinary counterparts
+# Reference: Computational Neuro-Software Engineering (2026)
+neuro_taxonomy:
+  C1:
+    cognitive_capacity: "Sustained Attention"
+    neuro_structural_ale: "Anterior/Middle/Posterior Cingulate (58.3% of largest cluster)"
+    somatosensory_cervical: "Head & neck movement; supraspinal cardiac control"
+    clinical_criteria: "Price per test for patient"
+    psydefconv_defense_level: 1
+    defense_label: "High Adaptive Defenses (e.g., humor, anticipation)"
+    activity_reserve: "Youth/adulthood reading and writing activities"
+
+  C2:
+    cognitive_capacity: "Response Inhibition"
+    neuro_structural_ale: "Medial Frontal Gyrus (39.3% of cluster)"
+    somatosensory_cervical: "Upper shoulders & diaphragm control (breathing)"
+    clinical_criteria: "Portability of testing device"
+    psydefconv_defense_level: 2
+    defense_label: "Mental Inhibition Defenses (e.g., displacement)"
+    activity_reserve: "Computational and strategic gaming activities"
+
+  C3:
+    cognitive_capacity: "Speed of Information Processing"
+    neuro_structural_ale: "Superior Frontal Gyrus (21.7% of largest cluster)"
+    somatosensory_cervical: "Deltoid & biceps control (upper arms)"
+    clinical_criteria: "Level of skill needed for administration"
+    psydefconv_defense_level: 3
+    defense_label: "Minor Image Distortion (e.g., devaluation)"
+    activity_reserve: "Professional and technical continuing education"
+
+  C4:
+    cognitive_capacity: "Cognitive Flexibility"
+    neuro_structural_ale: "Cingulate Gyrus medial cluster (40.0% of cluster)"
+    somatosensory_cervical: "Wrist extension & partial biceps control"
+    clinical_criteria: "Time required for assessment"
+    psydefconv_defense_level: 4
+    defense_label: "Disavowal Defenses (e.g., denial, rationalization)"
+    activity_reserve: "Linguistic translation and multi-lingual tasks"
+
+  C5:
+    cognitive_capacity: "Multiple Simultaneous Attention"
+    neuro_structural_ale: "Frontoparietal attentional networks"
+    somatosensory_cervical: "Triceps & wrist extension control"
+    clinical_criteria: "Area Under the Curve (AUC) statistical power"
+    psydefconv_defense_level: 5
+    defense_label: "Major Image Distortion (e.g., splitting)"
+    activity_reserve: "Complex visual-spatial arts and crafting"
+
+  C6:
+    cognitive_capacity: "Working Memory"
+    neuro_structural_ale: "Prefrontal-parietal retrieval loops"
+    somatosensory_cervical: "Hand & finger flexion (grip strength)"
+    clinical_criteria: "Diagnostic accuracy coefficient"
+    psydefconv_defense_level: 6
+    defense_label: "Action-oriented Defenses (e.g., acting out)"
+    activity_reserve: "Memory-intensive board games and chess"
+
+  C7:
+    cognitive_capacity: "Category Formation"
+    neuro_structural_ale: "Cingulate Gyrus medial cluster (25.0% of cluster)"
+    somatosensory_cervical: "Upper limb neuro-sensory feedback integration"
+    clinical_criteria: "Usage feasibility in clinical setups"
+    psydefconv_defense_level: 7
+    defense_label: "Borderline Defensive Level (e.g., projection)"
+    activity_reserve: "Logical categorization and archiving tasks"
+
+  C8:
+    cognitive_capacity: "Pattern Recognition & Inductive Thinking"
+    neuro_structural_ale: "Cerebellar-cortical loop networks"
+    somatosensory_cervical: "Cardiorespiratory autonomic sympathetic outflow"
+    clinical_criteria: "Correlative link with overall brain health"
+    psydefconv_defense_level: 8
+    defense_label: "Psychotic / Delusional defenses"
+    activity_reserve: "Multi-step scientific and mathematical inquiry"
+
+# ─── Research Metrics ──────────────────────────────────────────────────────────
+# The four novel metrics from Computational Neuro-Software Engineering framework
+research_metrics:
+  LCAI:
+    full_name: "Lifespan Cognitive Adaptability Index"
+    formula: "LCAI = (theta_a * log10(KEDE)) / (tau * sum_ICP)"
+    research_topic: 1
+    dimensions: [C4, C6]
+
+  CASM:
+    full_name: "Cervical Autonomic Strain Metric"
+    formula: "CASM = (LF/HF / RMSSD) * (1 + delta_EMG) * ln(ICP_active)"
+    research_topic: 2
+    dimensions: [C1, C2, C3]
+
+  MCI:
+    full_name: "Metacognitive Coping Index"
+    formula: "MCI = sum(w_adaptive * Phi_adaptive) / (sum(w_defensive * Phi_defensive) + Psi_perplexity)"
+    research_topic: 3
+    dimensions: [C6, C7, C8]
+
+  PCRS:
+    full_name: "Proteomic Cognitive Resilience Score"
+    formula: "PCRS = (ln(C1_inhibitor) / ln(sTie1)) * (KEDE_obs / KEDE_base) * (1 / CASM)"
+    research_topic: 4
+    dimensions: [C3, C7]

@@ -6,14 +6,17 @@ hardware:
   vlm_device: "cuda:0"
 
 vlm:
-  model_id: "Qwen/Qwen2.5-VL-7B-Instruct"
-  local_path: "./models/Qwen2.5-VL-7B-Instruct"
-  load_in_4bit: false
+  model_id: "Qwen/Qwen3-VL-8B-Instruct"
+  local_path: "./models/Qwen3-VL-8B-Instruct"
+  load_in_4bit: true
   load_in_8bit: false
   torch_dtype: "bfloat16"
-  max_new_tokens: 2048
-  temperature: 0.05
-  do_sample: false
+  max_new_tokens: 4096
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  repetition_penalty: 1.0
+  do_sample: true
   attn_implementation: "flash_attention_2"
   attn_fallback: "eager"
   min_pixels: 256
@@ -36,8 +39,8 @@ embedding:
 chatbot_llm:
   backend: "ollama"
   ollama_base_url: "http://localhost:11434"
-  model_name: "qwen2.5:7b-instruct-q8_0"
-  hf_model_id: "Qwen/Qwen2.5-7B-Instruct"
+  model_name: "qwen3:8b"
+  hf_model_id: "Qwen/Qwen3-8B"
   temperature: 0.7
   max_tokens: 1024
   top_p: 0.9
@@ -49,7 +52,7 @@ evaluator_ensemble:
   timeout_seconds: 120
   models:
     - name: "qwen3"
-      tag: "qwen2.5:7b-instruct-q8_0"
+      tag: "qwen3:8b"
       weight: 1.0
     - name: "mistral"
       tag: "mistral:7b-instruct-v0.2-q8_0"
@@ -58,7 +61,7 @@ evaluator_ensemble:
       tag: "llama3.1:8b-instruct-q8_0"
       weight: 1.0
     - name: "typhoon"
-      tag: "typhoon2:8b-instruct-q4_K_M"
+      tag: "scb10x/llama3.1-typhoon2-8b-instruct"
       weight: 1.0
   consensus_threshold: 0.75
   controversy_threshold: 0.50
