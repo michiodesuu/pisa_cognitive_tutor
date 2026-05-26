@@ -95,3 +95,7 @@ docker-compose.override.yml
 
 # Large files note: use Git LFS for models, vectors, and PDFs
 .claude
+
+data/chat_logs/*.db-shm
+data/chat_logs/*.db-wal
+.claude/
