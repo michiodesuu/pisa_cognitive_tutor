@@ -3,15 +3,17 @@ visualizations.py
 ──────────────────
 Publication-ready visualizations for the cognitive profile research paper.
 
-Generates:
-  1. Dimension correlation heatmap (Spearman ρ between C1-C8 scores)
-  2. ICAP level distribution bar chart (across all students)
-  3. Engagement trajectory plot (C4-C8 avg over turn number)
-  4. Duration vs. cognitive depth scatter (Duration_Sec vs C4 score)
-  5. Latent Transition Analysis (LTA) ICAP state transition heatmap
-  6. Comprehensive LaTeX table export (Fleiss κ, Gwet AC2, Krippendorff α)
+Generates (all saved to data/reports/ by run_full_report):
+  1. heatmap.png            — Spearman ρ correlation between C1-C8 scores
+  2. icap_distribution.png  — ICAP level distribution bar chart (all turns)
+  3. trajectory.png         — Cognitive engagement trajectory (C4-C8 vs turn#)
+  4. duration_scatter.png   — Response duration vs. causal reasoning depth (H1)
+  5. lta_transitions.png    — LTA ICAP state transition probability heatmap
+  6. ac2_comparison.png     — Grouped bar: ensemble AC2 vs each individual model
+  7. ac2_radar.png          — Radar/spider chart of ensemble AC2 across C1-C8
+  8. reliability_table.tex  — LaTeX table: Fleiss κ, Gwet AC2, Krippendorff α
 
-All plots use a clean academic style (no grid clutter).
+All plots use a clean academic style (no grid clutter, 150 dpi).
 """
 
 from __future__ import annotations
@@ -290,6 +292,225 @@ def plot_latent_transition_heatmap(
     logger.info(f"[Viz] Saved LTA heatmap to {output_path}")
 
 
+def _compute_per_model_agreement(
+    scores_rows: List[Dict],
+) -> Dict[str, Dict[str, Optional[float]]]:
+    """Compute each individual model's Gwet's AC2 against the ensemble dominant score.
+
+    Reads individual_votes_json from every scored row and builds a 2-column
+    ratings matrix (model vote, ensemble dominant) per dimension, then computes
+    Gwet's AC2 for each (model, dimension) pair.
+
+    Returns
+    -------
+    dict : {model_name: {dim: ac2_float_or_None}}
+    """
+    from collections import defaultdict
+    from .reliability import gwet_ac2 as _gwet_ac2
+
+    # {model_name: {dim: [(model_val, ensemble_val)]}}
+    model_pairs: Dict[str, Dict[str, list]] = defaultdict(lambda: defaultdict(list))
+
+    for row in scores_rows:
+        try:
+            votes = json.loads(row.get("individual_votes_json", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        for dim in DIMENSIONS:
+            ens_raw = row.get(f"{dim}_dominant", "NA")
+            try:
+                ens_val = float(int(ens_raw))
+            except (ValueError, TypeError):
+                continue  # no valid ensemble score for this turn/dim
+
+            for vote in votes:
+                model_name = vote.get("model", "unknown")
+                mv = vote.get("scores", {}).get(dim, "NA")
+                try:
+                    model_val = float(int(mv))
+                except (ValueError, TypeError):
+                    model_val = np.nan
+                model_pairs[model_name][dim].append((model_val, ens_val))
+
+    results: Dict[str, Dict[str, Optional[float]]] = {}
+    for model_name, dim_data in model_pairs.items():
+        results[model_name] = {}
+        for dim in DIMENSIONS:
+            pairs = dim_data.get(dim, [])
+            if len(pairs) < 5:
+                results[model_name][dim] = None
+                continue
+            mat = np.array(pairs, dtype=float)  # shape (N, 2)
+            ac2 = _gwet_ac2(mat, categories=[0.0, 1.0, 2.0])
+            results[model_name][dim] = round(float(ac2), 4) if not np.isnan(ac2) else None
+
+    return results
+
+
+def plot_ac2_comparison(
+    reliability_results: Dict[str, Dict],
+    per_model_results: Dict[str, Dict],
+    output_path: Path,
+):
+    """Grouped bar chart: ensemble Gwet's AC2 vs. each individual model per dimension.
+
+    Produces the figure for the paper comparing how much the ensemble outperforms
+    any single scorer across all eight cognitive dimensions.
+
+    Parameters
+    ----------
+    reliability_results : dict
+        Output of compute_dimension_reliability — {dim: {"gwet_ac2": float, ...}}.
+    per_model_results : dict
+        Output of _compute_per_model_agreement — {model_name: {dim: float}}.
+    output_path : Path
+        Destination PNG (e.g. data/reports/ac2_comparison.png).
+    """
+    plt = _try_import_mpl()
+    if plt is None:
+        return
+
+    n_dims = len(DIMENSIONS)
+    dim_labels = [DIM_LABELS.get(d, d) for d in DIMENSIONS]
+
+    ensemble_ac2 = [
+        max(0.0, reliability_results.get(d, {}).get("gwet_ac2") or 0.0)
+        for d in DIMENSIONS
+    ]
+
+    model_names = sorted(per_model_results.keys())
+    n_groups = len(model_names) + 1  # individual models + ensemble
+    width = 0.80 / n_groups
+    x = np.arange(n_dims)
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+
+    # Ensemble bars (leftmost in each group, highlighted)
+    offset = -(n_groups / 2 - 0.5) * width
+    ax.bar(x + offset, ensemble_ac2, width=width, label="Ensemble",
+           color="#1f77b4", edgecolor="white", linewidth=0.5, zorder=3)
+
+    # Individual model bars
+    model_palette = ["#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+    for k, (mname, color) in enumerate(zip(model_names, model_palette)):
+        model_ac2 = [
+            max(0.0, per_model_results[mname].get(d) or 0.0)
+            for d in DIMENSIONS
+        ]
+        offset_k = -(n_groups / 2 - 1.5 - k) * width
+        short_name = mname.split(":")[0]  # drop version tag (e.g. "qwen3:8b" → "qwen3")
+        ax.bar(x + offset_k, model_ac2, width=width, label=short_name,
+               color=color, edgecolor="white", linewidth=0.5, zorder=3)
+
+    # Reference threshold lines
+    ax.axhline(0.60, color="#1f77b4", linestyle="--", linewidth=1.0, alpha=0.5,
+               label="Target C1–C4 (AC2 ≥ 0.60)")
+    ax.axhline(0.50, color="gray", linestyle=":", linewidth=1.0, alpha=0.5,
+               label="Target C5–C8 (AC2 ≥ 0.50)")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(dim_labels, rotation=30, ha="right", fontsize=9)
+    ax.set_ylabel("Gwet's AC2")
+    ax.set_ylim(0, 1.05)
+    ax.set_title("Ensemble vs. Individual Model Gwet's AC2 per Cognitive Dimension",
+                 fontweight="bold", fontsize=11)
+    ax.legend(fontsize=8, loc="upper right", ncol=2)
+    ax.yaxis.grid(True, linestyle="--", linewidth=0.5, alpha=0.4, zorder=0)
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(output_path), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"[Viz] Saved AC2 comparison bar chart to {output_path}")
+
+
+def plot_ac2_radar(
+    reliability_results: Dict[str, Dict],
+    output_path: Path,
+    per_model_results: Optional[Dict[str, Dict]] = None,
+):
+    """Radar/spider chart of Gwet's AC2 across all eight cognitive dimensions.
+
+    The ensemble's AC2 polygon is filled in blue.  If per_model_results is
+    provided, the best individual model is overlaid as a dashed orange outline,
+    giving a visual sense of the ensemble's improvement.  Reference dashed
+    rings mark the 0.60 (C1–C4 target) and 0.50 (C5–C8 target) thresholds.
+
+    Parameters
+    ----------
+    reliability_results : dict
+        Output of compute_dimension_reliability — {dim: {"gwet_ac2": float, ...}}.
+    output_path : Path
+        Destination PNG (e.g. data/reports/ac2_radar.png).
+    per_model_results : dict, optional
+        Output of _compute_per_model_agreement.  When provided, the best model
+        (highest mean AC2) is overlaid.
+    """
+    plt = _try_import_mpl()
+    if plt is None:
+        return
+
+    n = len(DIMENSIONS)
+    angles = [i * 2 * np.pi / n for i in range(n)] + [0]  # +1 to close the polygon
+
+    ensemble_vals = [
+        max(0.0, min(1.0, reliability_results.get(d, {}).get("gwet_ac2") or 0.0))
+        for d in DIMENSIONS
+    ]
+    ensemble_closed = ensemble_vals + [ensemble_vals[0]]
+
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw={"polar": True})
+
+    # Reference threshold rings
+    for ref, ls, lbl in [
+        (0.60, "--", "Target C1–C4 (0.60)"),
+        (0.50, ":",  "Target C5–C8 (0.50)"),
+    ]:
+        ax.plot(angles, [ref] * (n + 1), linestyle=ls, linewidth=1.0,
+                color="gray", alpha=0.55, label=lbl)
+
+    # Optional: best individual model overlay
+    if per_model_results:
+        best_model = max(
+            per_model_results,
+            key=lambda m: float(np.nanmean(
+                [v for v in per_model_results[m].values() if v is not None] or [0]
+            )),
+        )
+        bm_vals = [
+            max(0.0, per_model_results[best_model].get(d) or 0.0)
+            for d in DIMENSIONS
+        ]
+        bm_closed = bm_vals + [bm_vals[0]]
+        ax.fill(angles, bm_closed, alpha=0.10, color="#ff7f0e")
+        ax.plot(angles, bm_closed, linewidth=1.4, linestyle="--", color="#ff7f0e",
+                label=f"Best model ({best_model.split(':')[0]})")
+
+    # Ensemble polygon
+    ax.fill(angles, ensemble_closed, alpha=0.22, color="#1f77b4")
+    ax.plot(angles, ensemble_closed, linewidth=2.2, color="#1f77b4",
+            marker="o", markersize=5, label="Ensemble AC2")
+
+    # Dimension axis labels
+    dim_labels = [DIM_LABELS.get(d, d) for d in DIMENSIONS]
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(dim_labels, fontsize=8)
+    ax.set_ylim(0, 1.0)
+    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(["0.2", "0.4", "0.6", "0.8", "1.0"], fontsize=7)
+    ax.set_title("Ensemble Gwet's AC2 by Cognitive Dimension",
+                 fontweight="bold", pad=18, fontsize=11)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.38, 1.18), fontsize=8)
+
+    plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(output_path), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"[Viz] Saved AC2 radar chart to {output_path}")
+
+
 def export_latex_table(
     reliability_results: Dict,
     ece_result: Dict,
@@ -371,6 +592,13 @@ def run_full_report(
 
     from .reliability import compute_dimension_reliability
     rel = compute_dimension_reliability(votes_lists)
+
+    # Per-model agreement vs ensemble dominant (needed for new plots)
+    per_model = _compute_per_model_agreement(scores)
+
+    # New: ensemble vs individual model bar chart + radar chart
+    plot_ac2_comparison(rel, per_model, output_dir / "ac2_comparison.png")
+    plot_ac2_radar(rel, output_dir / "ac2_radar.png", per_model_results=per_model)
 
     # Calibration
     from .calibration import compute_ece_from_scores_db
