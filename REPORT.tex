@@ -56,8 +56,6 @@
 \definecolor{codepurple}{RGB}{128,0,128}
 \definecolor{codeblue}{RGB}{0,0,180}
 \definecolor{codegray}{RGB}{100,100,100}
-\definecolor{placeholdercolor}{RGB}{220,230,245}
-\definecolor{placeholderborder}{RGB}{100,130,180}
 
 % ── Code Listings ─────────────────────────────────────────────────────────────
 \usepackage{listings}
@@ -131,41 +129,6 @@
 \titlespacing{\subsection}{0pt}{6pt}{2pt}
 \titlespacing{\subsubsection}{0pt}{4pt}{2pt}
 
-% ── Image Placeholder Commands ────────────────────────────────────────────────
-% Single-column placeholder
-\newcommand{\imgplaceholder}[3][0.85\columnwidth]{%
-    \begin{figure}[H]
-        \centering
-        \colorbox{placeholdercolor}{%
-            \begin{minipage}{#1}
-                \centering
-                \color{placeholderborder}
-                \vspace{1.2cm}
-                {\large\textbf{[ IMAGE PLACEHOLDER ]}}\\[0.5em]
-                \textit{#2}\\[1.2cm]
-            \end{minipage}%
-        }
-        \caption{#2}
-        \label{fig:#3}
-    \end{figure}
-}
-% Double-column (wide) placeholder
-\newcommand{\imgplaceholderwide}[2]{%
-    \begin{figure*}[t]
-        \centering
-        \colorbox{placeholdercolor}{%
-            \begin{minipage}{0.92\textwidth}
-                \centering
-                \color{placeholderborder}
-                \vspace{1.8cm}
-                {\large\textbf{[ IMAGE PLACEHOLDER ]}}\\[0.5em]
-                \textit{#1}\\[1.8cm]
-            \end{minipage}%
-        }
-        \caption{#1}
-        \label{fig:#2}
-    \end{figure*}
-}
 
 % ─────────────────────────────────────────────────────────────────────────────
 % TITLE
@@ -218,6 +181,8 @@ profiles, reliability statistics, and formula visualizations.
 \end{abstract}
 
 \tableofcontents
+\listoffigures
+\listoftables
 \vspace{1em}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -540,7 +505,12 @@ complete evaluation in 10--30~seconds vs.\ 60--120~seconds for a single 70B mode
 The system enforces a strict three-phase architecture with no cross-phase imports at the
 Python module level. Figure~\ref{fig:architecture} illustrates the full pipeline.
 
-\imgplaceholderwide{Three-Phase System Architecture: Ingestion \textrightarrow{} Tutoring \textrightarrow{} Evaluation (replace with rendered pipeline diagram)}{architecture}
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/pipeline.png}
+    \caption{Three-Phase System Architecture: Ingestion \textrightarrow{} Tutoring \textrightarrow{} Evaluation.}
+    \label{fig:architecture}
+\end{figure*}
 
 \textbf{Phase 1 --- Ingestion (offline, runs once or incrementally).}
 PISA PDFs are rendered to page images at 200~DPI by PyMuPDF and grouped into 3-page
@@ -576,7 +546,12 @@ and $L^s$ (sparse/keyword), each of length $2k$. The fused score for a document 
 
 The constant 60 is the standard smoothing factor from Cormack et al.~(2009)~\cite{cormack2009}.
 
-\imgplaceholder{Hybrid Retrieval Pipeline: Dense + Sparse Vectors fused via RRF (replace with system diagram)}{retrieval}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/retrieval_pipeline_diagram.png}
+    \caption{Hybrid Retrieval Pipeline: Dense + Sparse Vectors fused via Reciprocal Rank Fusion (RRF).}
+    \label{fig:retrieval}
+\end{figure}
 
 \textbf{Kappa-weighted majority voting.}
 For a given turn $t$ and dimension $C_j$, each model $m_i$ provides a vote
@@ -749,9 +724,19 @@ incrementally. CORS is configured for \texttt{http://localhost:3000}.
 the student chat interface and the researcher dashboard, communicating with the FastAPI
 backend over HTTP and WebSocket.
 
-\imgplaceholder{Next.js Chat Interface --- Socratic tutoring session in progress (replace with actual screenshot)}{nextjs-ui}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/chatbot-screenshot.png}
+    \caption{Next.js Chat Interface --- Socratic tutoring session in progress.}
+    \label{fig:nextjs-ui}
+\end{figure}
 
-\imgplaceholder{Next.js Research Dashboard --- Live cognitive profiles, reliability statistics, and formula visualizations (replace with actual screenshot)}{nextjs-dashboard}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/dashboard.png}
+    \caption{Next.js Research Dashboard --- Live cognitive profiles, reliability statistics, and formula visualizations.}
+    \label{fig:nextjs-dashboard}
+\end{figure}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Evaluation and Discussion}
@@ -825,7 +810,8 @@ processed in two batches: batch~1 (turns~1--8 from all sessions) and batch~2 (tu
 \textbf{Scenario~C --- Stress test (10 concurrent sessions).}
 Ten concurrent WebSocket chat sessions were simulated using \texttt{httpx.AsyncClient},
 each sending a pre-scripted 6-turn conversation. Metrics: $p_{50}$, $p_{95}$, $p_{99}$
-response latency and error rate.
+response latency and error rate (full results in Table~\ref{tab:latency},
+Appendix~\ref{sec:extended-data}).
 
 \textbf{Scenario~D --- Forbidden word compliance.}
 All 271~AI responses were retrospectively analyzed by the sanitizer regex to measure the
@@ -907,12 +893,19 @@ $P(\text{downgrade}) = 0.11$: students were nearly three times as likely to move
 ICAP level as they were to move to a lower one. The Passive$\rightarrow$Active transition
 was most common (41\% of Passive turns), while Interactive$\rightarrow$Constructive
 regression was the least common downward transition (8\% of Interactive turns).
+The full transition matrix is given in Table~\ref{tab:lta} and visualised in
+Figure~\ref{fig:lta-heatmap}; overall ICAP level distribution is shown in
+Figure~\ref{fig:icap-distribution} and Table~\ref{tab:icap-dist}
+(Appendix~\ref{sec:extended-data}).
 
 \textbf{H3 (Ensemble Reliability) --- Confirmed.}
 All four foundational dimensions (C1--C4) achieved AC2~$\geq$~0.60, with C1 reaching Almost
 Perfect agreement at 0.71. C5--C8 achieved Moderate-to-Substantial agreement (0.49--0.58),
 slightly below but near the 0.50 target. Fleiss' $\kappa$ was consistently 0.05--0.10 lower
 than AC2 for all dimensions, consistent with the Kappa Paradox in skewed distributions.
+Full per-dimension reliability statistics across all three metrics are shown in
+Figure~\ref{fig:ac2-radar}, Figure~\ref{fig:reliability-diagram}, and
+Table~\ref{tab:C1} in Appendix~\ref{sec:extended-data}.
 
 \textbf{H4 (Thai Model Contribution) --- Confirmed.}
 On 89~Thai-language turns, Typhoon2's agreement with the consensus was 72.4\%, compared to
@@ -937,7 +930,8 @@ target threshold).
 \textbf{Ensemble vs.\ single-model baseline.}
 Individual model AC2 values ranged from 0.47 (Mistral) to 0.58 (Qwen3) for C1--C4. The
 ensemble's AC2 of 0.61--0.71 represents a 5--13~pp improvement over the best individual
-model.
+model (see Figure~\ref{fig:ac2-comparison}). Per-model Thai-language agreement rates are
+detailed in Table~\ref{tab:thai} (Appendix~\ref{sec:extended-data}).
 
 \textbf{Duration proxy vs.\ LLM scoring.}
 $\rho = 0.41$ means \texttt{duration\_sec} explains $\approx$17\% of the variance in
@@ -947,7 +941,9 @@ intensity; LLM scoring captures cognitive engagement content.
 \textbf{RRF hybrid vs.\ dense-only retrieval.}
 Ablation on the retrieval layer: pure dense search achieves top-5 precision of 0.61 on a
 50-query evaluation set; hybrid RRF achieves 0.74 ($+13$~pp). The improvement is largest
-for queries containing specific technical vocabulary.
+for queries containing specific technical vocabulary. Inter-dimension score correlations
+(C1--C8) are visualised in Figure~\ref{fig:dim-correlation}
+(Appendix~\ref{sec:extended-data}).
 
 \subsection{Remark}
 
@@ -1037,6 +1033,7 @@ scalable, automated measurement of cognitive process quality in AI-mediated scie
 % ─────────────────────────────────────────────────────────────────────────────
 
 \section{Glossary of Terms}
+\label{sec:glossary}
 
 \begin{longtable}{@{}p{3.5cm}p{0.8\linewidth}@{}}
 \caption{Glossary} \label{tab:glossary} \\
@@ -1084,6 +1081,7 @@ scalable, automated measurement of cognitive process quality in AI-mediated scie
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Representative Code Snippets}
+\label{sec:code}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \subsection*{B.1 --- Reciprocal Rank Fusion (\texttt{src/retrieval/hybrid\_search.py})}
@@ -1213,7 +1211,8 @@ def sanitize_response(text: str) -> tuple[str, bool]:
 \end{lstlisting}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section{Extended Data Tables}
+\section{Extended Data: Tables and Figures}
+\label{sec:extended-data}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \begin{table}[H]
@@ -1243,6 +1242,18 @@ C8 & 0.49 & 0.40 & 0.38 & Moderate \\
 % Output file:  data/reports/reliability_table.tex
 % Upload to:    figures/reliability_table.tex  in Overleaf
 \input{figures/reliability_table.tex}
+
+% ── Figure: Reliability Diagram ───────────────────────────────────────────────
+% Generated by: src/metrics/visualizations.py → run_full_report()
+% Output file:  data/reports/reliability_diagram.png
+% Upload to:    figures/reliability_diagram.png  in Overleaf
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/reliability_diagram.png}
+    \caption{Ensemble inter-rater reliability summary: Fleiss'~$\kappa$, Gwet's AC2, and
+        Krippendorff's~$\alpha$ per cognitive dimension C1--C8.}
+    \label{fig:reliability-diagram}
+\end{figure}
 
 % ── Figure 7 ─────────────────────────────────────────────────────────────────
 % Generated by: src/metrics/visualizations.py → plot_ac2_radar()
