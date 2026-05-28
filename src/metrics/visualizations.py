@@ -72,7 +72,8 @@ def plot_dimension_correlation_heatmap(
     if plt is None:
         return
 
-    from scipy.stats import spearmanr
+    import warnings
+    from scipy.stats import spearmanr, ConstantInputWarning
 
     matrix = []
     for row in scores_rows:
@@ -93,7 +94,9 @@ def plot_dimension_correlation_heatmap(
         for j in range(n_dims):
             mask = ~(np.isnan(arr[:, i]) | np.isnan(arr[:, j]))
             if mask.sum() >= 5:
-                r, _ = spearmanr(arr[mask, i], arr[mask, j])
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", ConstantInputWarning)
+                    r, _ = spearmanr(arr[mask, i], arr[mask, j])
                 corr[i, j] = r
 
     fig, ax = plt.subplots(figsize=(9, 7))
@@ -202,11 +205,13 @@ def plot_duration_vs_depth(
         c4 = row.get("C4_dominant", "NA")
         icap = row.get("dominant_icap", "Unknown")
         try:
-            xs.append(float(dur))
-            ys.append(int(c4))
-            colors.append(ICAP_COLORS.get(icap, "#888"))
+            x = float(dur)
+            y = int(c4)
         except (ValueError, TypeError):
-            pass
+            continue
+        xs.append(x)
+        ys.append(y)
+        colors.append(ICAP_COLORS.get(icap, "#888"))
 
     if not xs:
         return
