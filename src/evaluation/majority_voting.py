@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 DIMENSIONS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
 VALID_SCORES = {0, 1, 2}  # NA handled separately
+VALID_ICAP = {"Passive", "Active", "Constructive", "Interactive"}
+CONFIDENCE_FLOOR = 0.3  # prevent zero-weight votes when model reports 0.0
 KAPPA_WEIGHTS_PATH = Path("data/processed_jsonl/model_kappa_weights.json")
 
 
@@ -43,10 +45,26 @@ def _load_kappa_weights(cfg: dict) -> Dict[str, float]:
 def _extract_json(raw: str) -> Optional[Dict[str, Any]]:
     """Extract the first valid JSON object from model output."""
     raw = re.sub(r"```(?:json)?", "", raw).strip()
-    # Find first {...}
     start = raw.find("{")
     if start == -1:
         return None
+
+    # Try 1: JSON runs to end of string (most common — no trailing text).
+    try:
+        return json.loads(raw[start:])
+    except json.JSONDecodeError:
+        pass
+
+    # Try 2: JSON ends at the last } in the string.
+    end = raw.rfind("}")
+    if end > start:
+        try:
+            return json.loads(raw[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    # Try 3: depth-track to find the closing brace (fallback; does not handle
+    # unmatched braces inside string values correctly, but catches simple cases).
     depth = 0
     for i, ch in enumerate(raw[start:], start=start):
         if ch == "{":
@@ -74,9 +92,19 @@ def _validate_scores(scores: Dict[str, Any]) -> Dict[str, Any]:
                 validated[dim] = v if v in VALID_SCORES else "NA"
             except (ValueError, TypeError):
                 validated[dim] = "NA"
-    validated["confidence"] = float(scores.get("confidence", 0.5))
-    validated["icap_level"] = scores.get("icap_level", "Unknown")
-    validated["reasoning"] = scores.get("reasoning", "")
+
+    # Confidence: apply floor so a model reporting 0.0 still contributes weight.
+    try:
+        conf = float(scores.get("confidence", 0.5))
+    except (ValueError, TypeError):
+        conf = 0.5
+    validated["confidence"] = max(conf, CONFIDENCE_FLOOR)
+
+    # icap_level: map any unrecognised value (e.g. "Below Level") to "Passive".
+    icap = scores.get("icap_level", "Passive")
+    validated["icap_level"] = icap if icap in VALID_ICAP else "Passive"
+
+    validated["reasoning"] = scores.get("reasoning", "") or ""
     return validated
 
 
@@ -114,33 +142,46 @@ class ModelEvaluator:
             "model": self.tag,
             "messages": [
                 {"role": "system", "content": "You are a PISA cognitive assessment expert. "
-                 "Return ONLY JSON."},
+                 "Return ONLY valid JSON. No markdown, no explanation outside the JSON object."},
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
             "options": {
                 "temperature": 0.1,
-                "num_predict": 512,
+                "num_predict": 600,
             },
         }
-        try:
-            resp = httpx.post(
-                self.base_url.rstrip("/") + "/api/chat",
-                json=payload,
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            raw = resp.json().get("message", {}).get("content", "")
-            parsed = _extract_json(raw)
-            if parsed is None:
-                logger.warning(f"[{self.name}] Could not parse JSON from response")
+        # Suppress thinking tokens for models that support reasoning mode.
+        if "qwen3" in self.tag.lower() or "qwq" in self.tag.lower():
+            payload["think"] = False
+        for attempt in range(2):
+            try:
+                resp = httpx.post(
+                    self.base_url.rstrip("/") + "/api/chat",
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                resp.raise_for_status()
+                raw = resp.json().get("message", {}).get("content", "")
+                parsed = _extract_json(raw)
+                if parsed is None:
+                    if attempt == 0:
+                        # On first failure, nudge model to return only JSON
+                        payload["messages"].append({"role": "assistant", "content": raw})
+                        payload["messages"].append({
+                            "role": "user",
+                            "content": "Your response was not valid JSON. Return ONLY the JSON object, starting with { and ending with }. No other text.",
+                        })
+                        continue
+                    logger.warning(f"[{self.name}] Could not parse JSON after retry")
+                    return None
+                validated = _validate_scores(parsed)
+                validated["model_name"] = self.name
+                return validated
+            except Exception as e:
+                logger.warning(f"[{self.name}] Scoring failed: {e}")
                 return None
-            validated = _validate_scores(parsed)
-            validated["model_name"] = self.name
-            return validated
-        except Exception as e:
-            logger.warning(f"[{self.name}] Scoring failed: {e}")
-            return None
+        return None
 
 
 class MajorityVoter:

@@ -23,6 +23,8 @@ import asyncio
 import csv
 import json
 import logging
+import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -92,7 +94,6 @@ class AnalyzerPipeline:
         self.config_path = config_path
         self.db_path = Path(self.cfg["session_db"]["path"])
         self.voter: MajorityVoter = MajorityVoter(config_path)
-        self._searcher = None
         self._db: aiosqlite.Connection = None
 
     async def _init_db(self):
@@ -117,15 +118,36 @@ class AnalyzerPipeline:
         return [dict(zip(cols, row)) for row in rows]
 
     def _get_pisa_context(self, user_input: str) -> str:
-        """Retrieve relevant PISA context for scoring."""
-        if self._searcher is None:
-            return ""
+        """
+        Retrieve PISA context in a subprocess to isolate BGE/Qdrant segfaults.
+        Falls back to empty string on any failure.
+        """
+        script = (
+            "import sys, json\n"
+            "from pathlib import Path\n"
+            "from src.retrieval.embedder import BGEEmbedder\n"
+            "from src.retrieval.hybrid_search import QdrantHybridSearch\n"
+            "cfg = Path(sys.argv[1])\n"
+            "query = sys.argv[2]\n"
+            "e = BGEEmbedder(cfg)\n"
+            "s = QdrantHybridSearch(cfg, e)\n"
+            "results = s.search(query, top_k=3)\n"
+            "print(s.format_context_for_prompt(results))\n"
+        )
         try:
-            results = self._searcher.search(user_input, top_k=3)
-            return self._searcher.format_context_for_prompt(results)
+            proc = subprocess.run(
+                [sys.executable, "-c", script, str(self.config_path), user_input],
+                capture_output=True, text=True, timeout=60,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                return proc.stdout.strip()
+            if proc.returncode != 0:
+                logger.debug(f"[Analyzer] Retrieval subprocess failed (rc={proc.returncode})")
+        except subprocess.TimeoutExpired:
+            logger.debug("[Analyzer] Retrieval subprocess timed out")
         except Exception as e:
-            logger.warning(f"[Analyzer] Context retrieval failed: {e}")
-            return ""
+            logger.debug(f"[Analyzer] Retrieval subprocess error: {e}")
+        return ""
 
     async def _save_score(self, turn: Dict, result: Dict[str, Any]):
         """Persist scoring result to the scores table."""
@@ -166,16 +188,6 @@ class AnalyzerPipeline:
     async def run(self, batch_size: int = 100):
         """Main async entry point."""
         await self._init_db()
-
-        # Init retrieval
-        try:
-            from ..retrieval.embedder import BGEEmbedder
-            from ..retrieval.hybrid_search import QdrantHybridSearch
-            embedder = BGEEmbedder(self.config_path)
-            self._searcher = QdrantHybridSearch(self.config_path, embedder)
-            logger.info("[Analyzer] Retrieval layer loaded")
-        except Exception as e:
-            logger.warning(f"[Analyzer] Could not load retrieval: {e}")
 
         turns = await self._get_unscored_turns(batch_size)
         logger.info(f"[Analyzer] Found {len(turns)} unscored turn(s)")

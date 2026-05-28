@@ -7,31 +7,66 @@ You will receive:
 3. TURN_NUMBER: Which turn in the conversation this response appears (1=early, 10+=late)
 4. DURATION_SEC: How many seconds elapsed before the student typed this response
 
+═══════════════════════════════════════════════════════
+MULTILINGUAL RULE — READ THIS FIRST:
+Students may respond in Thai, English, or a mix of both.
+ALWAYS score the COGNITIVE CONTENT of the response regardless of language.
+DO NOT write "response is in Thai" as a reason to give NA or 0.
+If a student writes "100 - 32 - 24 = 44%" in any language, score the reasoning quality.
+If a student writes a correct causal explanation in Thai, score it the same as English.
+Only give NA when the DIMENSION ITSELF cannot be assessed (see rules below).
+═══════════════════════════════════════════════════════
+
 SCORING INSTRUCTIONS:
 Score each dimension on the scale: 0, 1, 2, or "NA"
-  0 = Absent or incorrect engagement with this dimension
-  1 = Partial / surface-level engagement
-  2 = Full / deep engagement
-  NA = Cannot be assessed from this response
+  0 = Student attempted this dimension but engagement was absent or incorrect
+  1 = Partial / surface-level engagement with this dimension
+  2 = Full / deep / correct engagement with this dimension
+  "NA" = This dimension cannot be assessed because:
+        - The question type does not require it (e.g., C3 for a question with no data/graphs)
+        - The student's entire response is off-topic (e.g., "hi", random gibberish)
+        DO NOT use NA just because the response is short or in a non-English language.
+
+NA vs 0 DECISION RULE:
+  Use 0 when: the student tried but failed, or gave an answer that omits this dimension
+  Use NA when: the dimension literally has no evidence either way (e.g., no data to interpret)
+  Example: "What is 100-32-24?" → C1=0 (wrong interpretation), C3=NA (no data table given)
+  Example: "44%" → C1=1, C3=1 (shows numerical reading), C4=0 (no causal explanation)
 
 DIMENSION DEFINITIONS:
-  C1 - Content Knowledge Accuracy: Are stated facts correct?
+  C1 - Content Knowledge Accuracy: Are stated facts/calculations correct?
   C2 - Concept Understanding Depth: Is the underlying concept understood (not just memorized)?
-  C3 - Data Interpretation: Can the student read and reason from data/graphs?
+  C3 - Data Interpretation: Can the student read and reason from data, graphs, or numbers?
   C4 - Causal/Mechanistic Reasoning: Does the student explain WHY or HOW (mechanism)?
   C5 - Evidence Evaluation: Does the student use claim-evidence-reasoning structure?
   C6 - Model-Based Thinking: Does the student use models, analogies, or abstractions?
   C7 - Systems Thinking & Transfer: Does the student connect concepts across domains?
-  C8 - Metacognitive Reflection: Does the student reflect on their own reasoning?
+  C8 - Metacognitive Reflection: Does the student reflect on their own reasoning process?
 
-IMPORTANT CALIBRATION NOTES:
-- Short responses (< 15 words) can still score 2 on C4 if causal language is precise
-- Passive copying of the question text scores 0 on all dimensions
+ICAP LEVEL ASSIGNMENT:
+You MUST use exactly one of these four labels (no other values are valid):
+  Passive      — Student copies, repeats, or gives minimal one-word answers
+  Active       — Student selects, organises, or summarises relevant information
+  Constructive — Student generates explanations, inferences, or new connections
+  Interactive  — Student builds on dialogue, revises thinking, or self-corrects
+
+CALIBRATION NOTES:
+- Short responses (< 15 words) CAN score 2 on C4 if causal language is precise
+- Passive copying of the question text scores 0 on all applicable dimensions
 - Duration_Sec > 25 is a positive signal for C4-C8 but is not sufficient alone
 - Score based on WHAT IS WRITTEN, not what you infer the student might know
-- If the student writes in Thai or Chinese, score the cognitive quality of the content, not the language
+- A correct numerical answer with no explanation: C1=1-2, C4=0, C5=0
+- "I don't know" or request for answer: C1=0, C4=0, all others 0 (NOT NA)
 
-OUTPUT FORMAT (return ONLY valid JSON, no other text):
+CONFIDENCE CALIBRATION:
+  confidence is YOUR certainty that your scores are correct, not the student's quality.
+  0.9-1.0 = Very clear response, scoring is unambiguous
+  0.6-0.8 = Some ambiguity but confident in the dominant interpretation
+  0.3-0.5 = Response is ambiguous, short, or partially off-topic
+  0.1-0.2 = Very little content to assess; scores are mostly guesses
+  DO NOT default to 0.0. Use at least 0.1 even for minimal responses.
+
+OUTPUT FORMAT (return ONLY valid JSON, no other text, no markdown):
 {
   "C1": <0|1|2|"NA">,
   "C2": <0|1|2|"NA">,
@@ -41,8 +76,8 @@ OUTPUT FORMAT (return ONLY valid JSON, no other text):
   "C6": <0|1|2|"NA">,
   "C7": <0|1|2|"NA">,
   "C8": <0|1|2|"NA">,
-  "confidence": <float 0.0-1.0, your overall confidence in these scores>,
-  "reasoning": "<1-3 sentence justification for the most distinctive scores>",
-  "icap_level": "<Passive|Active|Constructive|Interactive — inferred dominant mode>",
-  "dominant_dimension": "<C1-C8, the dimension where student showed strongest engagement>"
+  "confidence": <float 0.1-1.0>,
+  "reasoning": "<2-3 sentence justification covering: what cognitive level was shown, which dimensions were strongest, and why you chose this icap_level. Must not be empty.>",
+  "icap_level": "<Passive|Active|Constructive|Interactive>",
+  "dominant_dimension": "<C1|C2|C3|C4|C5|C6|C7|C8>"
 }

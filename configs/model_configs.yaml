@@ -17,7 +17,7 @@ vlm:
   top_k: 20
   repetition_penalty: 1.0
   do_sample: true
-  attn_implementation: "flash_attention_2"
+  attn_implementation: "sdpa"
   attn_fallback: "eager"
   min_pixels: 256
   max_pixels: 1280
@@ -61,7 +61,7 @@ evaluator_ensemble:
       tag: "llama3.1:8b-instruct-q8_0"
       weight: 1.0
     - name: "typhoon"
-      tag: "scb10x/llama3.1-typhoon2-8b-instruct"
+      tag: "scb10x/llama3.1-typhoon2-8b-instruct:latest"
       weight: 1.0
   consensus_threshold: 0.75
   controversy_threshold: 0.50
