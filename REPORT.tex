@@ -212,9 +212,9 @@ Fleiss' $\kappa$, Gwet's AC2, and Krippendorff's $\alpha$. Preliminary results i
 that response latency is a credible proxy for cognitive depth (H1), that students tend
 to progress toward higher ICAP levels over a session (H2), and that the ensemble
 achieves Substantial agreement (AC2~$\geq$~0.60) on C1--C4 (H3). A FastAPI backend
-exposes REST and WebSocket endpoints, a Chainlit interface serves as a development UI,
-and a Next.js~14 frontend provides a production-ready research dashboard with live
-cognitive profiles, reliability statistics, and formula visualizations.
+exposes REST and WebSocket endpoints, and a Next.js~14 frontend provides the student
+chat interface alongside a production-ready research dashboard with live cognitive
+profiles, reliability statistics, and formula visualizations.
 \end{abstract}
 
 \tableofcontents
@@ -496,8 +496,7 @@ PDF rendering & PyMuPDF (fitz) & 1.24+ \\
 Quantization & bitsandbytes (4-bit QLoRA) & Latest \\
 Web API & FastAPI & 0.111+ \\
 ASGI server & Uvicorn & 0.30+ \\
-Dev chat UI & Chainlit & 1.1+ \\
-Production frontend & Next.js 14 (App Router) & 14.x \\
+Frontend & Next.js 14 (App Router) & 14.x \\
 Statistical analysis & SciPy, NumPy, scikit-learn & 1.13+, 1.26+, 1.4+ \\
 Visualization & Matplotlib, Seaborn & 3.9+, 0.13+ \\
 \bottomrule
@@ -741,16 +740,16 @@ capture the full engagement trajectory while preventing fatigue effects.
 
 \subsubsection{System Integration}
 
-\textbf{Chainlit development UI} (\texttt{src/chatbot/app.py}) runs as a standalone
-WebSocket server on port~8000, managing session lifecycle via \texttt{@cl.on\_chat\_start},
-\texttt{@cl.on\_message}, and \texttt{@cl.on\_chat\_end} decorators.
+\textbf{FastAPI backend} (\texttt{src/api/main.py}) runs on port~8001, exposing REST
+endpoints for session management, file upload, history retrieval, and profile queries,
+plus a \texttt{/api/chat/\{session\_id\}} WebSocket endpoint that streams tokens
+incrementally. CORS is configured for \texttt{http://localhost:3000}.
 
-\textbf{FastAPI production API} (\texttt{src/api/main.py}) exposes REST endpoints for
-session management, file upload, history retrieval, and profile queries, plus a
-\texttt{/api/chat/\{session\_id\}} WebSocket endpoint that streams tokens incrementally.
-CORS is configured for \texttt{http://localhost:3000} (Next.js frontend).
+\textbf{Next.js~14 frontend} (\texttt{frontend/}) runs on port~3000 and serves both
+the student chat interface and the researcher dashboard, communicating with the FastAPI
+backend over HTTP and WebSocket.
 
-\imgplaceholder{Chainlit Development UI Screenshot --- Socratic tutoring session in progress (replace with actual screenshot)}{chainlit-ui}
+\imgplaceholder{Next.js Chat Interface --- Socratic tutoring session in progress (replace with actual screenshot)}{nextjs-ui}
 
 \imgplaceholder{Next.js Research Dashboard --- Live cognitive profiles, reliability statistics, and formula visualizations (replace with actual screenshot)}{nextjs-dashboard}
 

@@ -1,227 +1,240 @@
-# PISA Cognitive Tutor v2.0 — Skeptical Presentation Script
+Complete Runbook — PISA Cognitive Tutor
+0. Prerequisites (install once)
+0-A. Python environment
 
-> **Format:** Solo presenter playing both advocate and skeptic. Skeptic challenges (in italics) appear before each answer. Use this to prepare for tough Q&A or to rehearse a self-critical walkthrough.
+cd C:\Users\Asus\Downloads\pisa_cognitive_tutor
 
----
+# Install PyTorch with CUDA first (match your CUDA version — example for CUDA 12.1)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-## Slide 1 — Opening: What Are We Actually Claiming?
+# Install all project dependencies
+pip install -r requirements.txt
 
-Good morning. I want to walk you through the PISA Cognitive Tutor — a research platform we built for NECTEC to study how students engage cognitively when interacting with an AI tutor on PISA science questions.
+# Optional: Flash Attention for faster VLM inference (needs CUDA compiler)
+pip install flash-attn --no-build-isolation
+0-B. Ollama — install and pull all 4 LLM models
 
-But before I sell you on it, let me be honest about what is hard to believe, and why we built the system the way we did.
+# Install Ollama (Windows)
+# Download and run the installer from https://ollama.com/download
 
----
+# Start the Ollama daemon (keep this terminal open throughout all steps)
+ollama serve
 
-## Slide 2 — The Problem We're Solving
+# Pull all 4 evaluator models + the chat model (in a NEW terminal)
+ollama pull qwen3:8b
+ollama pull mistral:7b-instruct-v0.2-q8_0
+ollama pull llama3.1:8b-instruct-q8_0
+ollama pull scb10x/llama3.1-typhoon2-8b-instruct
 
-The central motivation is this: "active learning" is a label researchers and teachers throw around, but it means almost nothing scientifically. Is a student who highlights text "active"? What about one who copies notes? What about one who explains a concept back in their own words?
+# Verify all 5 are available
+ollama list
+0-C. Download HuggingFace models (VLM + embedder)
 
-These behaviours are cognitively very different — but most studies collapse them into one category, measure them with self-report surveys, or proxy them through attendance records.
+# Create local model directories
+mkdir -p models/Qwen3-VL-8B-Instruct models/bge-m3
 
-*Skeptic: So you're claiming you can do better than decades of educational research with an LLM chatbot and some Python scripts?*
+# Vision Language Model for ingestion (~16 GB, quantized to ~5 GB at runtime)
+hf download Qwen/Qwen3-VL-8B-Instruct \
+    --local-dir ./models/Qwen3-VL-8B-Instruct
 
-No. We're claiming we can operationalise a specific theoretical framework — the ICAP Framework (Chi & Wylie, 2014) — in a way that is automated, scalable, and less subject to researcher bias than manual annotation. That is a narrower, more defensible claim.
+# BGE-M3 embedding model (~570 MB)
+hf download BAAI/bge-m3 \
+    --local-dir ./models/bge-m3
+0-D. Node.js frontend dependencies (install once)
 
----
+cd frontend
+npm install
+cd ..
+1. Ingestion — extract PISA knowledge from PDFs
+Prerequisite: Ollama must be running (ollama serve).
 
-## Slide 3 — The ICAP Framework
 
-The ICAP Framework classifies cognitive engagement into four levels:
+# Put your PISA PDF files here (Thai, English, Chinese — any mix)
+ls data/raw_pdfs/
+# Expected: science_th.pdf, science_en.pdf, science_zh.pdf, etc.
 
-- **Passive** — student reads or listens, stores information
-- **Active** — student selects, highlights, or repeats
-- **Constructive** — student explains, infers, draws novel connections
-- **Interactive** — student debates, critiques, builds on another's idea
+# Run the full ingestion pipeline
+python -m src.ingestion.run_ingestion --config configs/model_configs.yaml
+What this does:
+
+Discovers all PDFs in data/raw_pdfs/
+Renders each page to 200 DPI images (PyMuPDF)
+Groups into 3-page shards
+Sends each shard to Qwen3-VL-8B (4-bit) → extracts structured JSON (topic, competency, misconceptions, vocabulary)
+Appends records to data/processed_jsonl/knowledge_base.jsonl
+Builds a NetworkX knowledge graph → saves to data/vector_db/knowledge_graph.gpickle
+Embeds all records via BGE-M3 (dense + sparse) → upserts into Qdrant at data/vector_db/qdrant/
+Expected duration: ~30–60 min per 100 PDF pages on RTX 4090.
 
-The hypothesis is that outcomes improve monotonically: I > C > A > P.
+Resume-safe: If it crashes, rerun the same command — already-processed PDFs are skipped automatically.
 
-*Skeptic: That's a 2014 paper. Has it been replicated? Can you actually measure these modes from chat text alone?*
+Outputs:
 
-Fair point. The ICAP hierarchy is well-supported for in-person learning contexts. Whether the same hierarchy holds in AI-mediated asynchronous chat is exactly what this study is designed to test — we are not assuming the hypothesis is true, we are providing the infrastructure to test it rigorously.
 
-As for measuring modes from text: we do not claim to measure them perfectly. We measure 8 cognitive dimensions (C1–C8) as a proxy, scored by an ensemble of 4 LLMs with inter-rater reliability metrics. The κ values will tell us whether the scoring is credible.
+data/processed_jsonl/knowledge_base.jsonl    ← ~340 records
+data/vector_db/qdrant/                       ← Qdrant local DB
+data/vector_db/knowledge_graph.gpickle      ← NetworkX graph
+ingestion.log                                ← full log
+2. Tutoring sessions — collect student data
+Requires two terminals running simultaneously.
 
----
 
-## Slide 4 — Workflow Overview
+# Terminal B — FastAPI backend (keep running during all sessions)
+uvicorn src.api.main:app --host 0.0.0.0 --port 8001 --reload
 
-The system has three temporally separated phases:
+# Terminal C — Next.js frontend
+npm run dev --prefix frontend
+Open http://localhost:3000 in a browser. Conduct sessions with students (up to 12 turns each).
 
-1. **Ingestion** (offline, once): PISA PDFs → structured knowledge base
-2. **Tutoring** (real-time): Socratic chatbot session, conversation logged to SQLite
-3. **Evaluation** (offline, after sessions): 4 LLMs score each student turn on C1–C8
+Take screenshot now for Figure 3 (Next.js chat UI). Save as figures/nextjs_screenshot.png.
+
+What gets recorded per turn:
 
-*Skeptic: Why three phases? Why not score in real-time?*
-
-Because if the chatbot knows what dimensions a student is scoring low on, it will subtly adapt its questions to probe those dimensions — which makes the assessment circular. This is the Hawthorne Effect. NECTEC required strict separation as a condition of the research design. The chatbot literally has zero imports from the evaluation layer — that wall is enforced at the code level, not just as a policy.
-
----
-
-## Slide 5 — Phase 1: Ingestion Pipeline
-
-We process PISA PDFs using a Vision Language Model — Qwen2.5-VL-7B — rather than OCR.
-
-*Skeptic: Why not just use a PDF text extractor? PyMuPDF can pull text directly.*
-
-PISA documents are the worst case for text extraction: multi-column layouts, embedded figures, LaTeX equations, Thai and Chinese text with diacritics, and tables whose structure is destroyed the moment you extract raw characters. We tried EasyOCR in v1. Thai scientific text accuracy was under 70%. Equation extraction was essentially random.
-
-The VLM reads the page as an image and outputs structured JSON directly — topic, correct concept, common misconceptions, key vocabulary, sub-questions. No OCR intermediate step means no OCR error accumulation.
-
-*Skeptic: A 7B model doing complex structured extraction at low temperature — aren't hallucinations a real concern?*
-
-Yes. That is why we validate every record before writing it to the knowledge base. Required fields must be present. Type mismatches are normalised. Records that fail validation are discarded with a warning. We also log everything, so a researcher can audit the extraction quality per PDF. This is not a solved problem — it is a known limitation that we mitigate, not eliminate.
-
----
-
-## Slide 6 — Phase 1: Knowledge Representation
-
-From the extracted JSONL we build two parallel structures:
-
-- **Qdrant vector database** — BGE-M3 embeddings (dense + sparse) for semantic retrieval
-- **NetworkX knowledge graph** — structural relationships: misconceptions, competency links, concept neighbours
-
-*Skeptic: Why a knowledge graph on top of a vector database? Isn't that over-engineering?*
-
-Vector search tells you "this passage is semantically similar to the query." It does not tell you "this concept is commonly confused with that one" or "understanding X is a prerequisite for Y." The graph encodes those structural relationships. When a student asks about photosynthesis, the tutor retrieves not just similar passages, but the full misconception neighbourhood — "plants get energy from soil," "oxygen comes from CO2 splitting." That directly improves the Socratic questioning quality.
-
-*Skeptic: How do you know the graph is accurate? Did you validate the edges?*
-
-The edges are derived automatically from the VLM extraction output — misconceptions come from the `common_misconceptions` field, vocabulary relations come from shared key terms. The graph inherits whatever accuracy the VLM extraction achieves. We have not done a manual edge validity audit, and that is a legitimate gap.
-
----
-
-## Slide 7 — Phase 2: Socratic Tutoring
-
-The chatbot uses Qwen2.5-7B-Instruct via Ollama. It retrieves context from both the vector database and the knowledge graph, then generates Socratic questions — not answers.
-
-*Skeptic: How do you ensure the tutor is actually Socratic and not just answering questions?*
-
-Two layers. First, the system prompt instructs the LLM to never give direct answers. Second, we maintain a forbidden word list — "correct," "wrong," "well done," "ถูกต้อง," "正确," and equivalents in all three languages — and strip any that appear in the response at generation time. The regex runs after every generated token batch.
-
-*Skeptic: That sounds fragile. Can't the model say "that's a good line of thinking" without using any forbidden words?*
-
-Partially true. The regex catches explicit judgment words but cannot catch all implicit reinforcement. This is an active research limitation. The system prompt framing is the primary guardrail; the regex is a secondary safety net. Whether subtle reinforcement language leaks through and biases behaviour is something the response time analysis could surface — if students respond faster when they get implicit praise, that would show up as noise in the duration-ICAP correlation.
-
----
-
-## Slide 8 — Phase 2: Response Time as Cognitive Proxy
-
-We record how long a student thinks before replying — the duration between when the AI finishes streaming and when the student submits their message.
-
-| Duration | Assumed ICAP Level |
-|----------|-------------------|
-| < 8 seconds | Passive |
-| 8–25 seconds | Active |
-| > 25 seconds | Constructive / Interactive |
-
-*Skeptic: Those thresholds look completely arbitrary. Where do they come from?*
-
-They are informed by the research literature on think-time in educational contexts, but you are right that they are not empirically calibrated for this specific platform or population. They are a starting hypothesis, not a validated instrument. The plan is to use the scored data to calibrate them retroactively — do students who score high on C4–C8 actually cluster above 25 seconds? If not, we revise. These thresholds should not be interpreted as ground truth.
-
-*Skeptic: Also — response time measures typing time, not thinking time. A student could write a shallow response slowly.*
-
-Correct. Duration is a behavioural proxy, not a direct cognitive measure. The central analysis correlates duration with C4 score (causal reasoning), not uses duration as a dimension in itself. A weak correlation would tell us the proxy is unreliable. A strong one would provide supporting evidence. We are transparent about this distinction.
-
----
-
-## Slide 9 — Phase 3: Offline Evaluation — The Ensemble
-
-After sessions end, four locally-running LLMs independently score each student turn on C1–C8 (scored 0/1/2 per dimension):
-
-| Model | Strength |
-|-------|---------|
-| Qwen2.5-7B-Instruct | General reasoning |
-| Mistral-7B-Instruct-v0.2 | Scientific reasoning |
-| Llama3.1-8B-Instruct | Instruction following |
-| Typhoon2-8B-Instruct | Thai-tuned |
-
-Their votes are aggregated using confidence-weighted plurality voting. The final score per dimension is the weighted dominant vote.
-
-*Skeptic: Using LLMs to score LLM-generated conversations seems circular. The evaluators might share the same biases as the tutor.*
-
-This is the most serious methodological concern in the system. The mitigations are: (1) different model families — Mistral and Llama are architecturally distinct from Qwen; (2) Typhoon2 is fine-tuned specifically for Thai, adding domain-specific orthogonality; (3) inter-rater reliability (Fleiss' κ) will reveal if they are all agreeing for the wrong reasons — systematic bias shows up as κ near zero even with high nominal agreement. If all four models share a bias, κ will be high but calibration error will be high too. We measure both.
-
-*Skeptic: Why 4 models? Why not just use one large model — GPT-4, Claude 3 Opus?*
-
-Three reasons: cost at research scale (hundreds of sessions, 12 turns each, 8 dimensions = tens of thousands of API calls); reproducibility (cloud model versions change silently); and the ensemble's theoretical advantage — majority voting across 4 diverse 7–8B models outperforms a single 30B model on ordinal classification because the models' failure modes are decorrelated. This claim has empirical support in the NLP literature. It is not just a budget justification.
-
----
-
-## Slide 10 — The Kappa-Adaptive Weighting Loop
-
-Once enough data accumulates, we compute each model's historical agreement with the majority vote and adjust its weight for future scoring. Models that consistently agree with the consensus get more voting power.
-
-*Skeptic: Isn't this circular? You're weighting models by how much they agree with each other, not by how much they agree with ground truth.*
-
-Yes, and this is a known limitation of any unsupervised ensemble. Weights are initialised at 1.0 (equal) and adjust slowly. The adaptive weighting is most useful for detecting a model that has started drifting — if Ollama updates a model silently and it starts returning different scores, its agreement with the others will drop and its weight will fall. For ground-truth validation, we have a separate optional phase: DSPy prompt optimisation with ~50 manually annotated gold examples. Without those gold labels, adaptive weighting is a consistency measure, not an accuracy measure. We are explicit about this distinction.
-
----
-
-## Slide 11 — Inter-Rater Reliability
-
-We report Fleiss' κ and Krippendorff's α per dimension. Our target is κ ≥ 0.70 on C4–C8.
-
-*Skeptic: Why is 0.70 the target? That's a fairly moderate bar for a claim about measuring cognitive depth.*
-
-0.70 corresponds to "substantial agreement" in the Landis & Koch scale — it is the conventional threshold for acceptability in educational measurement. The honest answer is that C4–C8 (causal reasoning, evidence evaluation, metacognition) are genuinely hard to operationalise, and expecting near-perfect agreement on nuanced constructs is unrealistic. If we consistently achieve κ < 0.40, that would be evidence the dimensions are not reliably measurable from chat text alone — a meaningful null result, not a failure.
-
----
-
-## Slide 12 — Hardware Reality Check
-
-*Skeptic: This system requires a 24 GB GPU, 4 Ollama models, Qdrant, a FastAPI server, and a Next.js frontend. What research institution can run this?*
-
-The 24 GB GPU requirement is for the ingestion phase — Qwen2.5-VL-7B in bfloat16. That runs once per knowledge base build. Ongoing session serving only requires the Ollama models (can run on 16 GB with quantisation) and the API/frontend stack (CPU-only). The evaluation pipeline runs overnight and tolerates slow inference.
-
-The system runs fully air-gapped — no cloud API keys required. For institutions without GPU resources, the ingestion step can be run on a rented cloud machine once, and the knowledge base assets shipped to the local deployment. It is not plug-and-play, but it is more accessible than it looks at first pass.
-
----
-
-## Slide 13 — What We Do Not Know Yet
-
-Let me be direct about the open questions this study cannot yet answer:
-
-1. **Does the ICAP hierarchy hold in AI-chat contexts?** We are testing this, not assuming it.
-2. **Are the C1–C8 rubric dimensions the right decomposition?** They are grounded in Chi & Wylie but adapted for chat. The rubric may need revision after seeing real data.
-3. **Does Socratic tutoring increase higher-order engagement compared to direct instruction?** We have no control condition in this design.
-4. **Are the duration thresholds valid for Thai student populations?** Calibration requires data we do not yet have.
-5. **Do the LLM evaluators share systematic biases that κ cannot detect?** This requires gold-standard manual annotation to rule out.
-
-*Skeptic: So what exactly are you claiming to contribute?*
-
-An open-source, reproducible infrastructure for cognitive engagement measurement at scale — with inter-rater reliability and calibration metrics built in — that makes the above questions empirically testable. The contribution is the measurement instrument, not the answer. The answers come from using it.
-
----
-
-## Slide 14 — Closing
-
-The PISA Cognitive Tutor is a research platform, not a product. It makes one core bet: that the gap between "a student who copies a definition" and "a student who constructs an explanation" is detectable in their language, and that detecting it reliably at scale is worth doing.
-
-Whether that bet pays off will show in the κ values, the duration correlations, and whether C4–C8 scores predict the transfer-learning outcomes we measure downstream.
-
-If the κ values come back below 0.40 — we will say so, publish the null result, and redesign the rubric. That is what the reliability infrastructure is for.
-
-Thank you.
-
----
-
-## Appendix: Anticipated Hard Questions
-
-**Q: Why SQLite instead of PostgreSQL?**
-Single-node research tool. SQLite with WAL mode handles concurrent reads from the API and writes from the session manager without issue at research-session scale (tens of concurrent students, not thousands). Zero ops overhead.
-
-**Q: Why not fine-tune one model instead of using an ensemble?**
-Fine-tuning requires gold-labelled training data we do not have at the start of the study. The ensemble is a zero-shot approach. Once we have ~500 manually annotated examples, fine-tuning is a valid next step.
-
-**Q: The forbidden word list looks brittle — what about Thai synonyms the regex misses?**
-The `icap_rubric.yaml` config exposes the forbidden word list. Expanding it is a maintenance task, not an architectural one. We welcome contributions from Thai-language educators who can identify praise/judgment synonyms we missed.
-
-**Q: Why track only 12 turns per session?**
-Research-validated cutoff for reliable cognitive scoring — too few turns and the profile is noisy; too many and fatigue effects distort the trajectory analysis. 12 is a common boundary in educational dialogue research for this reason. It is configurable in `model_configs.yaml`.
-
-**Q: Gemini API appears in the codebase — is student data sent to the cloud?**
-Gemini is a disabled-by-default fallback for knowledge base synthesis only. No student conversation data is ever sent to any cloud API. The evaluator ensemble, the chatbot, and all inference run on local Ollama. This is verifiable by reading `tutor_engine.py` — there are no external HTTP calls except to `localhost:11434`.
-
----
-
-*Script version: 2026-05-14 — for NECTEC research presentation*
+user_input — raw student message
+ai_response — Socratic tutor response (sanitized)
+duration_sec — seconds since last AI message
+kb_context_used — whether Qdrant context was retrieved
+Output:
+
+
+data/chat_logs/sessions.db   ← sessions + turns tables populated
+3. Evaluation — score all collected turns
+Run this after sessions are complete. Ollama must still be running.
+
+
+python -m src.evaluation.analyzer_pipeline \
+    --config configs/model_configs.yaml \
+    --batch 100
+What this does:
+
+Finds all turns with no entry in the scores table (LEFT JOIN query)
+Retrieves PISA context from Qdrant for each turn (top-3 results)
+Sends each turn to all 4 LLMs in parallel (ThreadPoolExecutor)
+Applies kappa-weighted majority voting → produces C1–C8 scores + dominant ICAP level
+Writes results to the scores table in SQLite
+Exports data/chat_logs/scores_export.csv
+Expected duration: ~18 seconds per turn × number of turns.
+
+Outputs:
+
+
+data/chat_logs/sessions.db          ← scores table now populated
+data/chat_logs/scores_export.csv    ← flat CSV for R/SPSS/Stata
+Verify it worked:
+
+
+python -c "
+import sqlite3
+conn = sqlite3.connect('data/chat_logs/sessions.db')
+turns  = conn.execute('SELECT COUNT(*) FROM turns').fetchone()[0]
+scores = conn.execute('SELECT COUNT(*) FROM scores').fetchone()[0]
+print(f'Turns: {turns}  |  Scored: {scores}')
+conn.close()
+"
+4. Generate all 7 figures automatically
+Run this after the evaluation step has populated the scores table.
+
+
+python -c "
+from pathlib import Path
+from src.metrics.visualizations import run_full_report
+run_full_report(
+    db_path=Path('data/chat_logs/sessions.db'),
+    output_dir=Path('data/reports'),
+)
+"
+What gets saved to data/reports/:
+
+File	Figure in paper	Function
+ac2_comparison.png	Fig 5	plot_ac2_comparison()
+trajectory.png	Fig 6	plot_engagement_trajectory()
+ac2_radar.png	Fig 7	plot_ac2_radar()
+lta_transitions.png	Fig 8	plot_latent_transition_heatmap()
+duration_scatter.png	Fig 9	plot_duration_vs_depth()
+icap_distribution.png	Fig 10	plot_icap_distribution()
+heatmap.png	Fig 11	plot_dimension_correlation_heatmap()
+reliability_table.tex	—	export_latex_table()
+5. Research dashboard — screenshot for Figure 4
+The research dashboard is part of the Next.js frontend. Keep the FastAPI backend and Next.js frontend running (from Step 2), then open:
+
+http://localhost:3000/dashboard
+
+Take screenshot for Figure 4 (research dashboard). Save as figures/dashboard_screenshot.png.
+
+6. Manual figures (Figs 1 & 2) — draw by hand
+These two cannot be generated by code. Use draw.io, Lucidchart, or PowerPoint.
+
+Figure 1 — System Architecture (Fig 1, full-width):
+Use the ASCII art in REPORT.MD Section 3.3.1 as blueprint. Three boxes flowing top-to-bottom: Ingestion → Tutoring → Evaluation, with the data stores (Qdrant, SQLite, NetworkX) shown between them.
+
+Figure 2 — Hybrid Retrieval Pipeline (Fig 2, single column):
+Simple left-to-right flow: Query → BGE-M3 → two branches (Qdrant dense and Qdrant sparse) → RRF fusion → Top-5 results.
+
+Save both as figures/architecture.png and figures/retrieval_pipeline.png.
+
+7. Upload to Overleaf and replace placeholders
+
+figures/
+  architecture.png          ← Fig 1  (manual)
+  retrieval_pipeline.png    ← Fig 2  (manual)
+  nextjs_screenshot.png     ← Fig 3  (screenshot)
+  dashboard_screenshot.png  ← Fig 4  (screenshot)
+  ac2_comparison.png        ← Fig 5  (data/reports/)
+  trajectory.png            ← Fig 6  (data/reports/)
+  ac2_radar.png             ← Fig 7  (data/reports/)
+  lta_transitions.png       ← Fig 8  (data/reports/)
+  duration_scatter.png      ← Fig 9  (data/reports/)
+  icap_distribution.png     ← Fig 10 (data/reports/)
+  heatmap.png               ← Fig 11 (data/reports/)
+For each placeholder in REPORT.tex, replace the \imgplaceholder{...}{label} block with:
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/FILENAME.png}
+  \caption{Your caption}
+  \label{fig:LABEL}
+\end{figure}
+For Figure 1 only, use figure* (spans both columns):
+
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/architecture.png}
+  \caption{Three-Phase System Architecture}
+  \label{fig:architecture}
+\end{figure*}
+Summary — execution order
+
+Terminal A (always running):   ollama serve
+
+Terminal B — one-time setup:
+  pip install torch ...
+  pip install -r requirements.txt
+  huggingface-cli download Qwen/Qwen3-VL-8B-Instruct ...
+  huggingface-cli download BAAI/bge-m3 ...
+  ollama pull qwen3:8b
+  ollama pull mistral:7b-instruct-v0.2-q8_0
+  ollama pull llama3.1:8b-instruct-q8_0
+  ollama pull scb10x/llama3.1-typhoon2-8b-instruct
+  cd frontend && npm install && cd ..
+
+Terminal B — pipeline:
+  ① python -m src.ingestion.run_ingestion          ← fills Qdrant + graph
+  ③ python -m src.evaluation.analyzer_pipeline     ← score all turns
+  ④ python -c "from src.metrics.visualizations import run_full_report; ..."
+     → data/reports/*.png                           ← Figs 5–11
+
+Terminal C — FastAPI backend (keep running during sessions):
+  ② uvicorn src.api.main:app --host 0.0.0.0 --port 8001 --reload
+
+Terminal D — Next.js frontend (keep running during sessions):
+  ② npm run dev --prefix frontend
+     [screenshot localhost:3000       → figures/nextjs_screenshot.png]
+     [screenshot localhost:3000/dashboard → figures/dashboard_screenshot.png]
+
+Manual:
+  ⑤ Draw Fig 1 (architecture) + Fig 2 (retrieval) → figures/*.png
+
+Overleaf:
+  ⑥ Upload figures/ folder → replace \imgplaceholder blocks → compile

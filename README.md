@@ -162,7 +162,7 @@ For each student response in a Socratic chatbot conversation, we assess 8 cognit
 ### Challenge 6: Windows + Flash Attention
 Multiple `ImportError: LlamaFlashAttention2` and `WinError 3` bugs encountered in previous versions.
 
-**Solution**: All model loading code includes automatic fallback from `flash_attention_2` → `eager` mode. A dedicated `py -3.11 -m venv` command avoids the Windows Store Python shim. All path handling uses `pathlib.Path` (never string concatenation).
+**Solution**: All model loading code includes automatic fallback from `sdpa` → `eager` mode. A dedicated `py -3.11 -m venv` command avoids the Windows Store Python shim. All path handling uses `pathlib.Path` (never string concatenation).
 
 ### Challenge 7: Gemini API Rate Limits
 **Solution**: The v2 architecture uses Gemini **only** as an optional fallback for knowledge base synthesis (disabled by default). All primary computation runs locally via Ollama. The system runs fully air-gapped.

@@ -953,7 +953,7 @@ vlm:
   load_in_4bit: true          # QLoRA — ~5 GB VRAM
   load_in_8bit: false
   torch_dtype: "bfloat16"
-  attn_implementation: "flash_attention_2"  # Falls back to "eager"
+  attn_implementation: "sdpa"  # Falls back to "eager"
   max_new_tokens: 4096
   temperature: 0.7
   top_p: 0.8
