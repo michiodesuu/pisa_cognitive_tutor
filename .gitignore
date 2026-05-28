@@ -5,15 +5,17 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-data/
 
 # Data (do not commit raw PDFs or student data)
 data/raw_pdfs/*.pdf
-data/chat_logs/
-data/chat_logs/*.csv
 data/vector_db/
 data/processed_jsonl/*.jsonl
 models/
+
+# chat_logs: track CSVs and exports but not the SQLite DB files
+data/chat_logs/sessions.db
+data/chat_logs/sessions.db-shm
+data/chat_logs/sessions.db-wal
 
 # Next.js
 frontend/.next/
@@ -76,7 +78,6 @@ credentials.json
 
 # Databases and local data
 *.sqlite3
-*.db
 
 # Logs, caches, temp
 logs/
@@ -96,6 +97,6 @@ docker-compose.override.yml
 # Large files note: use Git LFS for models, vectors, and PDFs
 .claude
 
-data/chat_logs/*.db-shm
-data/chat_logs/*.db-wal
 .claude/
+
+chainlit.md
