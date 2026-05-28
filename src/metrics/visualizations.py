@@ -523,10 +523,14 @@ def export_latex_table(
 ):
     """Export a publication-ready LaTeX table of reliability metrics."""
     lines = [
-        r"\begin{table}[h]",
+        r"\begin{table}[H]",
         r"\centering",
-        r"\caption{Inter-rater Reliability and Calibration Metrics for the Cognitive Assessment Ensemble}",
-        r"\label{tab:reliability}",
+        r"\caption{Ensemble Internal Consistency: Model-to-Model Agreement Across Cognitive"
+        r" Dimensions (C1--C8). Metrics computed from \texttt{individual\_votes\_json} in"
+        r" the session database; this measures intra-ensemble agreement, not agreement with"
+        r" human gold-standard annotations (see Table~\ref{tab:C1}).}",
+        r"\label{tab:ensemble-consistency}",
+        r"\scriptsize",
         r"\begin{tabular}{lccccc}",
         r"\hline",
         r"Dimension & Fleiss' $\kappa$ & Gwet's AC2 & Interpretation & Krippendorff's $\alpha$ & Consensus \% \\",
