@@ -262,6 +262,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
 
             full_response = ""
             kb_used = False
+            stream_error = None
 
             try:
                 async for token, is_first_kb in engine.respond_stream(
@@ -273,13 +274,13 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                         kb_used = True
                     await websocket.send_json({"type": "token", "content": token})
             except Exception as e:
-                logger.error(f"[WS] Stream error: {e}")
+                stream_error = e
+                logger.error(f"[WS] Stream error: {e}", exc_info=True)
                 await websocket.send_json({"type": "error", "message": str(e)})
-                break
 
             await websocket.send_json({"type": "done", "kb_used": kb_used})
 
-            # Persist turn
+            # Always persist the turn, even if the stream partially failed
             user_id = data.get("user_id", "unknown")
             try:
                 await session_mgr.record_turn(
@@ -291,8 +292,12 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                     kb_context_used=kb_used,
                     duration_sec=duration_sec,
                 )
+                logger.info(f"[WS] Turn {turn_number} saved for session {session_id[:8]}")
             except Exception as e:
-                logger.error(f"[WS] DB write error: {e}")
+                logger.error(f"[WS] DB write error: {e}", exc_info=True)
+
+            if stream_error:
+                break
 
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": full_response})

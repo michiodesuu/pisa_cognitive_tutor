@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 CREATE_SESSIONS_SQL = """
 CREATE TABLE IF NOT EXISTS sessions (
-    session_id   TEXT NOT NULL,
+    session_id   TEXT PRIMARY KEY,
     user_id      TEXT NOT NULL,
     started_at   TEXT NOT NULL,
     question_id  TEXT DEFAULT ''
@@ -53,8 +53,7 @@ CREATE TABLE IF NOT EXISTS turns (
     ai_response     TEXT NOT NULL,
     kb_context_used INTEGER NOT NULL DEFAULT 0,
     duration_sec    REAL NOT NULL DEFAULT 0.0,
-    question_topic  TEXT DEFAULT '',
-    FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+    question_topic  TEXT DEFAULT ''
 );
 """
 
@@ -107,16 +106,28 @@ class SessionManager:
     async def _init_db(self):
         self._db = await aiosqlite.connect(str(self.db_path))
         await self._db.execute("PRAGMA journal_mode=WAL;")
-        await self._db.execute("PRAGMA foreign_keys=ON;")
+        await self._db.execute("PRAGMA foreign_keys=OFF;")
         await self._db.execute(CREATE_SESSIONS_SQL)
+
+        # Drop turns if it was created with the broken FOREIGN KEY schema
+        # (sessions had no PRIMARY KEY, so the FK reference was invalid)
+        cur = await self._db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
+        )
+        row = await cur.fetchone()
+        if row and row[0] and "FOREIGN KEY" in row[0]:
+            logger.info("[SessionManager] Migrating turns table — removing broken FK")
+            await self._db.execute("DROP TABLE turns")
+
         await self._db.execute(CREATE_TURNS_SQL)
         for stmt in CREATE_INDEX_SQL.strip().split(";"):
             if stmt.strip():
                 try:
                     await self._db.execute(stmt)
                 except Exception:
-                    pass  # index may already exist
+                    pass
         await self._db.commit()
+        await self._db.execute("PRAGMA foreign_keys=ON;")
         logger.info(f"[SessionManager] DB ready at {self.db_path}")
 
     async def new_session(
