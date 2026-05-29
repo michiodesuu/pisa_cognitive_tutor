@@ -1,0 +1,24 @@
+\begin{table}[H]
+\centering
+\caption{Experimental Results Summary (computed from $N=20$ scored turns).}
+\label{tab:results-computed}
+\scriptsize
+\begin{tabularx}{\columnwidth}{@{}Xllc@{}}
+\toprule
+\textbf{Metric} & \textbf{Value} & \textbf{Target} & \textbf{Result} \\
+\midrule
+H1: Spearman $\rho$(C4--C8, duration\_sec) & $0.18$ $p = 0.447$ & $\geq 0.35$ & $\texttimes$ Fail \\
+H2: $P(\text{upgrade}) > P(\text{downgrade})$ & $0.11 > 0.16$ & Positive & $\texttimes$ Fail \\
+H3: Gwet's AC2 — C1 (Content Accuracy) & $0.71$ & $\geq 0.60$ & $\checkmark$ Pass \\
+H3: Gwet's AC2 — C2 (Concept Depth) & $0.87$ & $\geq 0.60$ & $\checkmark$ Pass \\
+H3: Gwet's AC2 — C3 (Data Interp.) & $0.73$ & $\geq 0.60$ & $\checkmark$ Pass \\
+H3: Gwet's AC2 — C4 (Causal Reasoning) & $0.92$ & $\geq 0.60$ & $\checkmark$ Pass \\
+H3: Gwet's AC2 — C5--C8 mean & $0.56$ & $\geq 0.50$ & $\checkmark$ Pass \\
+H4: Typhoon2 Thai-turn agreement rate & 100.0\% (others: 100.0\%, $\Delta = +0.0$~pp) & Others median $+5$~pp & $\texttimes$ Fail \\
+Models responded rate & $100.0\%$ & --- &  \\
+Controversy rate & $2.1\%$ & --- &  \\
+Avg eval latency / turn & $14.3$~s & --- &  \\
+KB utilisation rate & $25.0\%$ & --- &  \\
+\bottomrule
+\end{tabularx}
+\end{table}

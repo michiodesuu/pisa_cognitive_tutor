@@ -20,7 +20,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import re
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -571,6 +574,223 @@ def export_latex_table(
     logger.info(f"[Viz] Exported LaTeX table to {output_path}")
 
 
+def compute_results_summary(
+    scores: List[Dict],
+    db_path: Path,
+    rel: Dict,
+    output_path: Path,
+    n_models: int = 4,
+):
+    """
+    Compute H1–H4 hypothesis metrics and system metrics from real scored data,
+    then export a publication-ready LaTeX table to output_path.
+
+    Metrics produced
+    ----------------
+    H1  Spearman ρ between duration_sec and mean C4–C8 dominant scores.
+    H2  P(upgrade) and P(downgrade) from consecutive ICAP transitions.
+    H3  Gwet's AC2 per dimension from the reliability dict (already computed).
+    H4  Typhoon agreement rate on Thai-language turns vs other models.
+    System  responded rate, controversy rate, avg eval latency, KB utilisation.
+    """
+    ICAP_ORDER = {"Passive": 0, "Active": 1, "Constructive": 2, "Interactive": 3}
+    _thai_re = re.compile(r"[฀-๿]")
+
+    # ── H1: Spearman ρ (duration_sec vs mean C4–C8 score) ────────────────────
+    durations, depths = [], []
+    for row in scores:
+        dur = row.get("duration_sec")
+        vals = []
+        for dim in ["C4", "C5", "C6", "C7", "C8"]:
+            v = row.get(f"{dim}_dominant", "NA")
+            try:
+                vals.append(float(int(v)))
+            except (ValueError, TypeError):
+                pass
+        if dur is not None and vals:
+            dur_float = float(dur)
+            if 3.0 <= dur_float <= 300.0:
+                durations.append(dur_float)
+                depths.append(sum(vals) / len(vals))
+
+    h1_rho = h1_p = float("nan")
+    if len(durations) >= 5:
+        from scipy.stats import spearmanr
+        h1_rho, h1_p = spearmanr(durations, depths)
+
+    # ── H2: P(upgrade) / P(downgrade) from LTA transitions ───────────────────
+    by_session: Dict[str, List] = defaultdict(list)
+    for row in scores:
+        by_session[row["session_id"]].append(row)
+
+    upgrades = downgrades = total_trans = 0
+    for session_turns in by_session.values():
+        sorted_turns = sorted(session_turns, key=lambda x: x.get("turn_number", 0))
+        for i in range(len(sorted_turns) - 1):
+            fi = ICAP_ORDER.get(sorted_turns[i].get("dominant_icap", ""), -1)
+            ti = ICAP_ORDER.get(sorted_turns[i + 1].get("dominant_icap", ""), -1)
+            if fi >= 0 and ti >= 0:
+                total_trans += 1
+                if ti > fi:
+                    upgrades += 1
+                elif ti < fi:
+                    downgrades += 1
+
+    p_upgrade = upgrades / total_trans if total_trans > 0 else 0.0
+    p_downgrade = downgrades / total_trans if total_trans > 0 else 0.0
+
+    # ── H4: Typhoon Thai-turn agreement rate ──────────────────────────────────
+    conn = sqlite3.connect(str(db_path))
+    turn_inputs = {
+        row[0]: row[1]
+        for row in conn.execute("SELECT id, user_input FROM turns").fetchall()
+    }
+    conn.close()
+
+    typhoon_thai = [0, 0]    # [agreed, total]
+    typhoon_nonthai = [0, 0]
+    others_thai = [0, 0]
+
+    for row in scores:
+        user_input = turn_inputs.get(row.get("turn_id"), "")
+        is_thai = bool(_thai_re.search(user_input))
+        consensus = row.get("dominant_icap", "")
+        try:
+            votes = json.loads(row.get("individual_votes_json", "[]"))
+        except Exception:
+            continue
+        for v in votes:
+            agrees = int(v.get("icap_level", "") == consensus)
+            if v.get("model", "") == "typhoon":
+                if is_thai:
+                    typhoon_thai[0] += agrees; typhoon_thai[1] += 1
+                else:
+                    typhoon_nonthai[0] += agrees; typhoon_nonthai[1] += 1
+            elif is_thai:
+                others_thai[0] += agrees; others_thai[1] += 1
+
+    typhoon_thai_rate = typhoon_thai[0] / typhoon_thai[1] if typhoon_thai[1] > 0 else float("nan")
+    others_thai_rate = others_thai[0] / others_thai[1] if others_thai[1] > 0 else float("nan")
+    delta_pp = (typhoon_thai_rate - others_thai_rate) * 100 \
+        if not (math.isnan(typhoon_thai_rate) or math.isnan(others_thai_rate)) else float("nan")
+
+    # ── System metrics ────────────────────────────────────────────────────────
+    total_dim_slots = controversial_count = 0
+    for row in scores:
+        for dim in DIMENSIONS:
+            if row.get(f"{dim}_dominant", "NA") != "NA":
+                total_dim_slots += 1
+                if row.get(f"{dim}_controversial", 0):
+                    controversial_count += 1
+
+    controversy_rate = controversial_count / total_dim_slots if total_dim_slots > 0 else 0.0
+    avg_elapsed = sum(row.get("elapsed_sec", 0) for row in scores) / len(scores)
+    avg_responded = sum(row.get("models_responded", 0) for row in scores) / len(scores)
+    responded_rate = avg_responded / n_models
+
+    conn2 = sqlite3.connect(str(db_path))
+    kb_row = conn2.execute("SELECT AVG(CAST(kb_context_used AS FLOAT)) FROM turns").fetchone()
+    conn2.close()
+    kb_rate = float(kb_row[0] or 0.0)
+
+    # ── Helper: pass/fail label ───────────────────────────────────────────────
+    def _pf(condition: bool, note: str = "") -> str:
+        mark = r"\checkmark" if condition else r"\texttimes"
+        label = "Pass" if condition else "Fail"
+        suffix = f" ({note})" if note else ""
+        return f"${mark}$ {label}{suffix}"
+
+    def _fmt(v) -> str:
+        if math.isnan(v):
+            return "N/A"
+        return f"{v:.2f}"
+
+    def _fmtpct(v) -> str:
+        return "N/A" if math.isnan(v) else f"{v * 100:.1f}\\%"
+
+    # ── H3: pull AC2 values for C1–C4 and mean C5–C8 ─────────────────────────
+    ac2 = {dim: (rel.get(dim) or {}).get("gwet_ac2") for dim in DIMENSIONS}
+    c58_vals = [ac2[d] for d in ["C5", "C6", "C7", "C8"] if ac2.get(d) is not None]
+    ac2_c58_mean = sum(c58_vals) / len(c58_vals) if c58_vals else float("nan")
+
+    h1_pass  = (not math.isnan(h1_rho)) and h1_rho >= 0.35 and h1_p < 0.05
+    h2_pass  = p_upgrade > p_downgrade
+    h4_pass  = (not math.isnan(delta_pp)) and delta_pp >= 5.0
+    h3_c1    = ac2.get("C1") or float("nan")
+    h3_c2    = ac2.get("C2") or float("nan")
+    h3_c3    = ac2.get("C3") or float("nan")
+    h3_c4    = ac2.get("C4") or float("nan")
+
+    def _h3pf(v, threshold):
+        return _pf(not math.isnan(v) and v >= threshold)
+
+    # ── Build LaTeX rows ──────────────────────────────────────────────────────
+    p_note = f"$p = {h1_p:.3f}$" if not math.isnan(h1_p) else ""
+    rows = [
+        (
+            r"H1: Spearman $\rho$(C4--C8, duration\_sec)",
+            f"${_fmt(h1_rho)}$ {p_note}",
+            r"$\geq 0.35$",
+            _pf(h1_pass),
+        ),
+        (
+            r"H2: $P(\text{upgrade}) > P(\text{downgrade})$",
+            f"${p_upgrade:.2f} > {p_downgrade:.2f}$",
+            "Positive",
+            _pf(h2_pass),
+        ),
+        (r"H3: Gwet's AC2 — C1 (Content Accuracy)",     f"${_fmt(h3_c1)}$", r"$\geq 0.60$", _h3pf(h3_c1, 0.60)),
+        (r"H3: Gwet's AC2 — C2 (Concept Depth)",        f"${_fmt(h3_c2)}$", r"$\geq 0.60$", _h3pf(h3_c2, 0.60)),
+        (r"H3: Gwet's AC2 — C3 (Data Interp.)",         f"${_fmt(h3_c3)}$", r"$\geq 0.60$", _h3pf(h3_c3, 0.60)),
+        (r"H3: Gwet's AC2 — C4 (Causal Reasoning)",     f"${_fmt(h3_c4)}$", r"$\geq 0.60$", _h3pf(h3_c4, 0.60)),
+        (r"H3: Gwet's AC2 — C5--C8 mean",               f"${_fmt(ac2_c58_mean)}$", r"$\geq 0.50$", _h3pf(ac2_c58_mean, 0.50)),
+        (
+            r"H4: Typhoon2 Thai-turn agreement rate",
+            f"{_fmtpct(typhoon_thai_rate)} "
+            f"(others: {_fmtpct(others_thai_rate)}, "
+            f"$\\Delta = {'+' if not math.isnan(delta_pp) and delta_pp >= 0 else ''}"
+            f"{'N/A' if math.isnan(delta_pp) else f'{delta_pp:.1f}'}$~pp)",
+            r"Others median $+5$~pp",
+            _pf(h4_pass),
+        ),
+        (r"Models responded rate", f"${responded_rate * 100:.1f}\\%$", "---", ""),
+        (r"Controversy rate",      f"${controversy_rate * 100:.1f}\\%$", "---", ""),
+        (r"Avg eval latency / turn", f"${avg_elapsed:.1f}$~s", "---", ""),
+        (r"KB utilisation rate",   f"${kb_rate * 100:.1f}\\%$", "---", ""),
+    ]
+
+    n = len(scores)
+    lines = [
+        r"\begin{table}[H]",
+        r"\centering",
+        rf"\caption{{Experimental Results Summary (computed from $N={n}$ scored turns).}}",
+        r"\label{tab:results-computed}",
+        r"\scriptsize",
+        r"\begin{tabularx}{\columnwidth}{@{}Xllc@{}}",
+        r"\toprule",
+        r"\textbf{Metric} & \textbf{Value} & \textbf{Target} & \textbf{Result} \\",
+        r"\midrule",
+    ]
+    for metric, value, target, result in rows:
+        lines.append(f"{metric} & {value} & {target} & {result} \\\\")
+    lines += [r"\bottomrule", r"\end{tabularx}", r"\end{table}"]
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    logger.info(f"[Viz] Saved results summary to {output_path}")
+
+    # CSV export — plain values, no LaTeX markup
+    import csv, re as _re
+    _strip = lambda s: _re.sub(r"\\[a-zA-Z]+\{([^}]*)\}|\\[a-zA-Z]+|\$|\\%|~", "", s).strip()
+    csv_path = output_path.with_suffix(".csv")
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["metric", "value", "target", "result", "n_turns"])
+        for metric, value, target, result in rows:
+            writer.writerow([_strip(metric), _strip(value), _strip(target), _strip(result), n])
+    logger.info(f"[Viz] Saved results summary CSV to {csv_path}")
+
+
 def run_full_report(
     db_path: Path = Path("data/chat_logs/sessions.db"),
     output_dir: Path = Path("data/reports"),
@@ -614,4 +834,5 @@ def run_full_report(
     ece = compute_ece_from_scores_db(db_path, output_dir)
 
     export_latex_table(rel, ece, output_dir / "reliability_table.tex")
+    compute_results_summary(scores, db_path, rel, output_dir / "results_summary.tex")
     logger.info(f"[Viz] Full report saved to {output_dir}/")

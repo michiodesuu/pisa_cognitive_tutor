@@ -1,0 +1,13 @@
+metric,value,target,result,n_turns
+"H1: Spearman (C4--C8, duration\_sec)",0.18 p = 0.447,0.35,Fail,20
+H2: P() > P(),0.11 > 0.16,Positive,Fail,20
+H3: Gwet's AC2 — C1 (Content Accuracy),0.71,0.60,Pass,20
+H3: Gwet's AC2 — C2 (Concept Depth),0.87,0.60,Pass,20
+H3: Gwet's AC2 — C3 (Data Interp.),0.73,0.60,Pass,20
+H3: Gwet's AC2 — C4 (Causal Reasoning),0.92,0.60,Pass,20
+H3: Gwet's AC2 — C5--C8 mean,0.56,0.50,Pass,20
+H4: Typhoon2 Thai-turn agreement rate,"100.0 (others: 100.0,  = +0.0pp)",Others median +5pp,Fail,20
+Models responded rate,100.0,---,,20
+Controversy rate,2.1,---,,20
+Avg eval latency / turn,14.3s,---,,20
+KB utilisation rate,25.0,---,,20
