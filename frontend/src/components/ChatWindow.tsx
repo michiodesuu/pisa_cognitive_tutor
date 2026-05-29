@@ -10,7 +10,7 @@ import type { ChatMessage, UploadedFile } from "@/lib/types";
 import MessageBubble from "./MessageBubble";
 import TypingIndicator from "./TypingIndicator";
 
-interface Props { sessionId: string; userId: string; }
+interface Props { sessionId: string; userId: string; category: string; }
 
 const ACCEPTED = ".png,.jpg,.jpeg,.webp,.gif,.pdf,.csv,.xls,.xlsx,.txt,.md";
 const MAX_MB = 20;
@@ -23,13 +23,13 @@ function fileIcon(type: UploadedFile["file_type"]) {
   return <File className={cls} />;
 }
 
-export default function ChatWindow({ sessionId, userId }: Props) {
+export default function ChatWindow({ sessionId, userId, category }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
       role: "assistant",
       content:
-        "Welcome! I am here to help you explore science questions step by step.\n\n" +
+        `Welcome to the PISA Science Tutor (${category})!\n\nI am here to help you explore science questions step by step.\n\n` +
         "You can write in **Thai, English, or Chinese** — and you can also " +
         "**attach images, tables, or PDFs** using the 📎 button. " +
         "I will describe what I see and ask you questions about it. 🔬",
@@ -209,8 +209,9 @@ export default function ChatWindow({ sessionId, userId }: Props) {
       duration_sec,
       user_id: userId,
       file_ids: readyUploads.map((u) => u.file_id),  // ← passes file_ids to backend
+      category,
     }));
-  }, [input, isStreaming, turnNumber, userId, uploads]);
+  }, [input, isStreaming, turnNumber, userId, uploads, category]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -245,7 +246,7 @@ export default function ChatWindow({ sessionId, userId }: Props) {
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <header className="flex items-center gap-3 px-6 py-4 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] transition-theme">
         <div className="flex-1">
-          <h1 className="font-semibold text-[var(--text-primary)] font-display">PISA Science Tutor</h1>
+          <h1 className="font-semibold text-[var(--text-primary)] font-display">PISA Science Tutor ({category})</h1>
           <p className="text-xs text-[var(--text-muted)]">Turn {turnNumber} · {userId}</p>
         </div>
         <div className={`flex items-center gap-1.5 text-xs font-medium

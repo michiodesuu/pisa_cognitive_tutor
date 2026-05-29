@@ -63,7 +63,7 @@ class TutorEngine:
 
     # ── context retrieval ────────────────────────────────────────────────────
 
-    async def _retrieve_context(self, user_message: str) -> tuple[str, bool]:
+    async def _retrieve_context(self, user_message: str, category: Optional[str] = None) -> tuple[str, bool]:
         """
         Returns (context_block, kb_used_flag).
         Runs BGE-M3 search in a thread so it doesn't block the event loop.
@@ -73,7 +73,7 @@ class TutorEngine:
 
         try:
             results = await loop.run_in_executor(
-                None, lambda: self.searcher.search(user_message, top_k=5)
+                None, lambda: self.searcher.search(user_message, top_k=5, category=category)
             )
             vector_ctx = self.searcher.format_context_for_prompt(results)
         except Exception as e:
@@ -206,6 +206,7 @@ class TutorEngine:
         history: List[Dict[str, str]],
         turn_number: int = 1,
         file_context: str = "",
+        category: Optional[str] = None,
     ) -> AsyncGenerator[tuple[str, bool], None]:
         """
         Async generator that yields (token, kb_used_flag) tuples.
@@ -217,7 +218,7 @@ class TutorEngine:
               full_response += token
               cl_msg.stream_token(token)
         """
-        context, kb_used = await self._retrieve_context(user_message)
+        context, kb_used = await self._retrieve_context(user_message, category=category)
         messages = self._build_messages(
             user_message, history, context, turn_number,
             file_context=file_context,     # ← ADD THIS ARGUMENT

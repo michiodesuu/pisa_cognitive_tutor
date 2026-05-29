@@ -244,7 +244,8 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             user_input = data.get("user_input", "").strip()
             turn_number = int(data.get("turn_number", len(turns) + 1))
             duration_sec = float(data.get("duration_sec", time.perf_counter() - last_ai_time))
-            file_ids: list = data.get("file_ids", [])   # ← ADD THIS LINE
+            file_ids: list = data.get("file_ids", [])
+            category: str = data.get("category", "General Science")
 
             # Build file context to inject (add these lines right after):
             file_context = ""
@@ -268,6 +269,7 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                 async for token, is_first_kb in engine.respond_stream(
                     user_input, history, turn_number,
                     file_context=file_context,
+                    category=category,
                 ):
                     full_response += token
                     if is_first_kb:

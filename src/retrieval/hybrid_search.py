@@ -132,6 +132,7 @@ class QdrantHybridSearch:
                 },
                 payload={
                     "topic": record.get("topic", ""),
+                    "subject_category": record.get("subject_category", "General Science"),
                     "question_summary": record.get("question_summary", ""),
                     "correct_concept": record.get("correct_concept", ""),
                     "common_misconceptions": record.get("common_misconceptions", ""),
@@ -154,7 +155,7 @@ class QdrantHybridSearch:
         logger.info(f"[Qdrant] Ingested {len(points)} points")
 
     def search(
-        self, query: str, top_k: Optional[int] = None
+        self, query: str, top_k: Optional[int] = None, category: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Hybrid search: dense + sparse, fused with RRF.
@@ -165,10 +166,24 @@ class QdrantHybridSearch:
             NearestQuery,
             Prefetch,
             SparseVector,
+            Filter,
+            FieldCondition,
+            MatchValue,
         )
 
         self._ensure_collection()
         k = top_k or self._top_k
+
+        q_filter = None
+        if category and category != "General Science":
+            q_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="subject_category",
+                        match=MatchValue(value=category)
+                    )
+                ]
+            )
 
         (dense_vec, sparse_weights) = self.embedder.encode_both([query])[0]
         sparse_indices = [int(k2) for k2 in sparse_weights.keys()]
@@ -182,6 +197,7 @@ class QdrantHybridSearch:
                         query=dense_vec,
                         using=self._dense_name,
                         limit=k * 2,
+                        filter=q_filter,
                     ),
                     Prefetch(
                         query=SparseVector(
@@ -189,6 +205,7 @@ class QdrantHybridSearch:
                         ),
                         using=self._sparse_name,
                         limit=k * 2,
+                        filter=q_filter,
                     ),
                 ],
                 query=FusionQuery(fusion="rrf"),
@@ -203,6 +220,7 @@ class QdrantHybridSearch:
             results = self._client.search(
                 collection_name=self._collection_name,
                 query_vector=(self._dense_name, dense_vec),
+                query_filter=q_filter,
                 limit=k,
                 score_threshold=self._score_threshold,
                 with_payload=True,

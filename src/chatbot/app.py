@@ -76,9 +76,26 @@ async def on_chat_start():
     cl.user_session.set("history", [])
 
     # ── Welcome message — shown immediately, before any slow init ─────────
+    res = await cl.AskActionMessage(
+        content="Please select a subject category you want to explore:",
+        actions=[
+            cl.Action(name="General Science", value="General Science", label="General Science"),
+            cl.Action(name="Biology", value="Biology", label="Biology"),
+            cl.Action(name="Chemistry", value="Chemistry", label="Chemistry"),
+            cl.Action(name="Physics", value="Physics", label="Physics"),
+            cl.Action(name="Earth Science", value="Earth Science", label="Earth Science"),
+        ],
+        timeout=120
+    ).send()
+
+    category = "General Science"
+    if res and res.get("value"):
+        category = res.get("value")
+    cl.user_session.set("category", category)
+
     await cl.Message(
         content=(
-            "👋 **Welcome to the PISA Science Tutor**\n\n"
+            f"👋 **Welcome to the PISA Science Tutor ({category})**\n\n"
             "I am here to help you think through science questions step by step.\n"
             "You can type in **Thai, English, or Chinese** — whichever is most "
             "comfortable for you.\n\n"
@@ -179,9 +196,10 @@ async def on_message(message: cl.Message):
 
     full_response = ""
     kb_used = False
+    category = cl.user_session.get("category", "General Science")
     try:
         async for token, is_first_kb in engine.respond_stream(
-            user_text, history, turn_number
+            user_text, history, turn_number, category=category
         ):
             full_response += token
             await response_msg.stream_token(token)
