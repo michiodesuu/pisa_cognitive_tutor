@@ -141,6 +141,7 @@ class QdrantHybridSearch:
                     "key_vocabulary": record.get("key_vocabulary", []),
                     "source_file": record.get("source_file", ""),
                     "page_range": record.get("page_range", ""),
+                    "subject_category": record.get("subject_category", ""),
                 },
             )
             points.append(point)
@@ -155,39 +156,64 @@ class QdrantHybridSearch:
         logger.info(f"[Qdrant] Ingested {len(points)} points")
 
     def search(
-        self, query: str, top_k: Optional[int] = None, category: Optional[str] = None
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        use_hybrid: bool = True,
+        subject_category: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Hybrid search: dense + sparse, fused with RRF.
-        Returns list of payload dicts sorted by relevance.
+        Hybrid search: dense + sparse fused with RRF.
+
+        Parameters
+        ----------
+        use_hybrid : bool
+            True (default) = dense + sparse via RRF.
+            False = dense-only; used for ablation study control group.
+        subject_category : str, optional
+            If set, restricts results to records whose payload
+            ``subject_category`` equals this value (e.g. "life_science").
         """
         from qdrant_client.http.models import (
+            FieldCondition,
+            Filter,
             FusionQuery,
-            NearestQuery,
+            MatchValue,
             Prefetch,
             SparseVector,
-            Filter,
-            FieldCondition,
-            MatchValue,
         )
 
         self._ensure_collection()
         k = top_k or self._top_k
 
+        cat_val = subject_category or category
         q_filter = None
-        if category and category != "General Science":
+        if cat_val and cat_val != "General Science":
             q_filter = Filter(
                 must=[
                     FieldCondition(
                         key="subject_category",
-                        match=MatchValue(value=category)
+                        match=MatchValue(value=cat_val)
                     )
                 ]
             )
+        query_filter = q_filter
 
         (dense_vec, sparse_weights) = self.embedder.encode_both([query])[0]
         sparse_indices = [int(k2) for k2 in sparse_weights.keys()]
         sparse_values = [float(v) for v in sparse_weights.values()]
+
+        if not use_hybrid:
+            results = self._client.search(
+                collection_name=self._collection_name,
+                query_vector=(self._dense_name, dense_vec),
+                limit=k,
+                score_threshold=self._score_threshold,
+                with_payload=True,
+                query_filter=query_filter,
+            )
+            return [r.payload for r in results if r.payload]
 
         try:
             results = self._client.query_points(
@@ -212,11 +238,11 @@ class QdrantHybridSearch:
                 limit=k,
                 score_threshold=self._score_threshold,
                 with_payload=True,
+                query_filter=query_filter,
             )
             payloads = [r.payload for r in results.points if r.payload]
         except Exception as e:
             logger.warning(f"[Qdrant] Hybrid search failed, falling back to dense: {e}")
-            # Fallback to dense-only
             results = self._client.search(
                 collection_name=self._collection_name,
                 query_vector=(self._dense_name, dense_vec),
@@ -224,6 +250,7 @@ class QdrantHybridSearch:
                 limit=k,
                 score_threshold=self._score_threshold,
                 with_payload=True,
+                query_filter=query_filter,
             )
             payloads = [r.payload for r in results if r.payload]
 

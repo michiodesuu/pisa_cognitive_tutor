@@ -106,3 +106,30 @@ dspy:
   num_candidates: 10
   max_bootstrapped_demos: 3
   target_threshold: 0.70
+
+# ── Ablation flags ────────────────────────────────────────────────────────────
+# Each flag can be overridden per-session via POST /api/session/new { "ablation": {...} }
+# Set a flag to false to disable that component — used for ablation study groups.
+ablation:
+  use_rag: true              # false = skip all retrieval; pure LLM baseline
+  use_hybrid_search: true    # false = dense-only (no sparse/BM25 leg)
+  use_knowledge_graph: true  # false = skip 2-hop graph subgraph enrichment
+  use_sanitizer: true        # false = skip forbidden-word post-processing
+  use_kappa_weighting: true  # false = equal model weights in ensemble voting
+
+# ── Subject categories ────────────────────────────────────────────────────────
+# Shown in the UI so students can filter questions by subject area.
+# The `id` value is stored in the Qdrant payload as `subject_category`.
+subject_categories:
+  - id: "life_science"
+    label: "Life Science"
+    label_th: "ชีววิทยา"
+    description: "Photosynthesis, ecosystems, genetics, cell biology, evolution"
+  - id: "physical_science"
+    label: "Physical Science"
+    label_th: "วิทยาศาสตร์กายภาพ"
+    description: "Energy transfer, forces, electromagnetic radiation, chemistry"
+  - id: "earth_space"
+    label: "Earth & Space Science"
+    label_th: "โลกและอวกาศ"
+    description: "Plate tectonics, climate systems, stellar evolution, geology"
