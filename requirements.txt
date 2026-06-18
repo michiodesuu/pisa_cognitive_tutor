@@ -68,3 +68,10 @@ pytest-asyncio>=0.23.0
 # ── Dev utilities ────────────────────────────────────────────────
 python-dotenv>=1.0.0
 rich>=13.7.0
+
+# ── Fine-tuning ───────────────────────────────────────────────────
+datasets>=2.18.0
+trl>=0.8.0
+peft>=0.10.0
+bitsandbytes>=0.46.1
+wandb>=0.16.0
