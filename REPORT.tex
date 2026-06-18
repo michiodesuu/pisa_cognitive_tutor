@@ -520,10 +520,22 @@ shards. Each shard is processed by Qwen3-VL-8B (4-bit QLoRA) to extract structur
 upserted to Qdrant and serialized to a NetworkX DiGraph (\texttt{knowledge\_graph.gpickle}).
 
 \textbf{Phase 2 --- Tutoring (real-time, per-session).}
-Each student turn triggers: (1)~duration measurement, (2)~Qdrant hybrid search (top $k=5$),
-(3)~knowledge graph subgraph retrieval (2-hop BFS, up to 20 nodes), (4)~system prompt
-assembly, (5)~streaming inference from Ollama (qwen3:8b), (6)~multilingual forbidden-word
-sanitization, and (7)~turn persistence to SQLite. Sessions close after 12~turns.
+Each student turn triggers: (1)~duration measurement, (2)~Qdrant hybrid search (top $k=5$,
+optionally filtered by \texttt{subject\_category}), (3)~knowledge graph subgraph retrieval
+(2-hop BFS, up to 20 nodes), (4)~system prompt assembly, (5)~streaming inference from
+Ollama (qwen3:8b), (6)~multilingual forbidden-word sanitization, and (7)~turn persistence
+to SQLite. Sessions close after 12~turns.
+
+\textbf{Per-session ablation flags.} Each session carries an \texttt{ablation\_config}
+JSON object (stored in the \texttt{sessions} table) that independently enables or
+disables five pipeline components: \texttt{use\_rag} (skip retrieval entirely for a
+pure-LLM baseline), \texttt{use\_hybrid\_search} (dense-only vs.\ dense+sparse RRF),
+\texttt{use\_knowledge\_graph} (skip 2-hop BFS enrichment), \texttt{use\_sanitizer}
+(bypass forbidden-word post-processing), and \texttt{use\_kappa\_weighting} (equal vs.\
+$\kappa$-weighted ensemble voting). Flags are set at session creation via
+\texttt{POST /api/session/new} and are immutable for the lifetime of that session,
+ensuring clean separation between experimental groups running on the same platform
+simultaneously.
 
 \textbf{Phase 3 --- Evaluation (offline, after sessions complete).}
 The \texttt{AnalyzerPipeline} fetches unscored turns via \texttt{LEFT JOIN}, retrieves
@@ -593,10 +605,12 @@ The SQLite database at \texttt{data/chat\_logs/sessions.db} contains three table
 
 \begin{lstlisting}[style=sqlstyle, caption={Sessions table schema}]
 CREATE TABLE sessions (
-    session_id  TEXT PRIMARY KEY, -- UUID v4
-    user_id     TEXT NOT NULL,    -- UUID v4 (de-identified)
-    started_at  TEXT NOT NULL,    -- ISO 8601 UTC
-    question_id TEXT              -- optional PISA question ID
+    session_id       TEXT PRIMARY KEY, -- UUID v4
+    user_id          TEXT NOT NULL,    -- UUID v4 (de-identified)
+    started_at       TEXT NOT NULL,    -- ISO 8601 UTC
+    question_id      TEXT DEFAULT '',  -- optional PISA question ID
+    subject_category TEXT DEFAULT '',  -- 'life_science'|'physical_science'|'earth_space'
+    ablation_config  TEXT DEFAULT '{}' -- JSON: {"use_rag":true,"use_hybrid_search":true,...}
 );
 \end{lstlisting}
 
@@ -640,8 +654,11 @@ CREATE TABLE scores (
 
 \textbf{Normalization.} The schema is in Third Normal Form (3NF). \texttt{user\_id} and
 \texttt{turn\_number} are stored redundantly in \texttt{scores} as a deliberate
-denormalization for analytical query convenience. A parallel \texttt{conversations.csv}
-flat-file export is maintained for import into R, Stata, or SPSS.
+denormalization for analytical query convenience. \texttt{ablation\_config} is stored
+as a JSON string in \texttt{sessions} rather than a normalised flag table so that the
+exact experimental condition of each session survives intact even if the configuration
+schema evolves between study phases. A parallel \texttt{conversations.csv} flat-file
+export is maintained for import into R, Stata, or SPSS.
 
 \subsubsection{Data Ingestion and Pipeline}
 
@@ -715,10 +732,24 @@ capture the full engagement trajectory while preventing fatigue effects.
 
 \subsubsection{System Integration}
 
-\textbf{FastAPI backend} (\texttt{src/api/main.py}) runs on port~8001, exposing REST
-endpoints for session management, file upload, history retrieval, and profile queries,
-plus a \texttt{/api/chat/\{session\_id\}} WebSocket endpoint that streams tokens
-incrementally. CORS is configured for \texttt{http://localhost:3000}.
+\textbf{FastAPI backend} (\texttt{src/api/main.py}) runs on port~8001. Key endpoints:
+
+\begin{itemize}
+    \item \texttt{POST /api/session/new} --- creates a session; accepts optional
+    \texttt{subject\_category} (restricts RAG retrieval to one PISA domain) and
+    \texttt{ablation} dict (per-session component flags). Returns the resolved
+    \texttt{ablation\_config} so the frontend can display the active experiment condition.
+    \item \texttt{GET /api/categories} --- returns the available subject categories
+    (Life Science, Physical Science, Earth \& Space Science) for the question-picker UI.
+    \item \texttt{WS /api/chat/\{session\_id\}} --- streams tokens; the handler loads
+    \texttt{subject\_category} and \texttt{ablation\_config} from the session row at
+    connect time and propagates them to every \texttt{TutorEngine.respond\_stream()} call.
+    \item \texttt{GET /api/session/\{id\}/history}, \texttt{GET /api/profiles},
+    \texttt{GET /api/metrics/reliability}, \texttt{POST /api/analyze} --- history,
+    research profiles, reliability metrics, and offline evaluation trigger.
+\end{itemize}
+
+CORS is configured for \texttt{http://localhost:3000}.
 
 \textbf{Next.js~14 frontend} (\texttt{frontend/}) runs on port~3000 and serves both
 the student chat interface and the researcher dashboard, communicating with the FastAPI
@@ -918,9 +949,10 @@ C4--C8 scores. The two measures are complementary: duration captures behavioral 
 intensity; LLM scoring captures cognitive engagement content.
 
 \textbf{RRF hybrid vs.\ dense-only retrieval.}
-Ablation on the retrieval layer: pure dense search achieves top-5 precision of 0.61 on a
-50-query evaluation set; hybrid RRF achieves 0.74 ($+13$~pp). The improvement is largest
-for queries containing specific technical vocabulary. Inter-dimension score correlations
+Ablation on the retrieval layer (enabled natively via the \texttt{use\_hybrid\_search}
+session flag): pure dense search achieves top-5 precision of 0.61 on a 50-query evaluation
+set; hybrid RRF achieves 0.74 ($+13$~pp). The improvement is largest for queries
+containing specific technical vocabulary. Inter-dimension score correlations
 (C1--C8) are visualised in Figure~\ref{fig:dim-correlation}
 (Appendix~\ref{sec:extended-data}).
 
