@@ -7,7 +7,8 @@ dist/
 build/
 
 # Data (do not commit raw PDFs or student data)
-data/raw_pdfs/*.pdf
+data/finetuning/
+data/raw_pdfs/
 data/vector_db/
 data/finetuning/
 data/processed_jsonl/*.jsonl
@@ -101,3 +102,8 @@ docker-compose.override.yml
 .claude/
 
 chainlit.md
+
+# Local documentation (not for version control)
+SCRIPT.MD
+REPORT.MD
+README(architecture).MD
