@@ -35,12 +35,19 @@ logger = logging.getLogger(__name__)
 
 CREATE_SESSIONS_SQL = """
 CREATE TABLE IF NOT EXISTS sessions (
-    session_id   TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL,
-    started_at   TEXT NOT NULL,
-    question_id  TEXT DEFAULT ''
+    session_id       TEXT PRIMARY KEY,
+    user_id          TEXT NOT NULL,
+    started_at       TEXT NOT NULL,
+    question_id      TEXT DEFAULT '',
+    subject_category TEXT DEFAULT '',
+    ablation_config  TEXT DEFAULT '{}'
 );
 """
+
+MIGRATE_SESSIONS_SQL = [
+    "ALTER TABLE sessions ADD COLUMN subject_category TEXT DEFAULT ''",
+    "ALTER TABLE sessions ADD COLUMN ablation_config  TEXT DEFAULT '{}'",
+]
 
 CREATE_TURNS_SQL = """
 CREATE TABLE IF NOT EXISTS turns (
@@ -109,6 +116,14 @@ class SessionManager:
         await self._db.execute("PRAGMA foreign_keys=OFF;")
         await self._db.execute(CREATE_SESSIONS_SQL)
 
+        # Migrate sessions table — add columns that may not exist in older DBs
+        for stmt in MIGRATE_SESSIONS_SQL:
+            try:
+                await self._db.execute(stmt)
+            except Exception:
+                pass  # column already exists
+        await self._db.commit()
+
         # Drop turns if it was created with the broken FOREIGN KEY schema
         # (sessions had no PRIMARY KEY, so the FK reference was invalid)
         cur = await self._db.execute(
@@ -131,18 +146,34 @@ class SessionManager:
         logger.info(f"[SessionManager] DB ready at {self.db_path}")
 
     async def new_session(
-        self, user_id: str, question_id: str = ""
+        self,
+        user_id: str,
+        question_id: str = "",
+        subject_category: str = "",
+        ablation_config: str = "{}",
     ) -> str:
         """Create a new session and return its UUID."""
         session_id = str(uuid.uuid4())
         started_at = datetime.now(timezone.utc).isoformat()
         await self._db.execute(
-            "INSERT INTO sessions (session_id, user_id, started_at, question_id) "
-            "VALUES (?, ?, ?, ?)",
-            (session_id, user_id, started_at, question_id),
+            "INSERT INTO sessions "
+            "(session_id, user_id, started_at, question_id, subject_category, ablation_config) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, user_id, started_at, question_id, subject_category, ablation_config),
         )
         await self._db.commit()
         return session_id
+
+    async def get_session_meta(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Return the sessions row for a given session_id, or None if not found."""
+        cursor = await self._db.execute(
+            "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cursor.description]
+        return dict(zip(cols, row))
 
     async def record_turn(
         self,

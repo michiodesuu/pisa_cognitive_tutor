@@ -112,11 +112,17 @@ async def get_resources() -> Dict[str, Any]:
 class NewSessionRequest(BaseModel):
     user_id: Optional[str] = None
     question_topic: Optional[str] = ""
+    subject_category: Optional[str] = ""
+    # Per-session ablation overrides — only include keys you want to change.
+    # Example: {"use_rag": false} disables retrieval for this session only.
+    ablation: Optional[Dict[str, bool]] = None
 
 
 class NewSessionResponse(BaseModel):
     session_id: str
     user_id: str
+    subject_category: str
+    ablation_config: Dict[str, bool]
 
 
 class HistoryResponse(BaseModel):
@@ -139,13 +145,42 @@ async def health():
 @app.post("/api/session/new", response_model=NewSessionResponse)
 async def new_session(req: NewSessionRequest):
     res = await get_resources()
+    cfg = res["cfg"]
     user_id = req.user_id or f"student_{uuid.uuid4().hex[:8]}"
+
+    # Merge per-request ablation overrides on top of config defaults
+    base_ablation: Dict[str, bool] = {
+        "use_rag": True, "use_hybrid_search": True,
+        "use_knowledge_graph": True, "use_sanitizer": True,
+        "use_kappa_weighting": True,
+        **cfg.get("ablation", {}),
+    }
+    if req.ablation:
+        base_ablation = {**base_ablation, **req.ablation}
+
     session_id = await res["session_manager"].new_session(
         user_id=user_id,
         question_id=req.question_topic or "",
+        subject_category=req.subject_category or "",
+        ablation_config=json.dumps(base_ablation),
     )
-    logger.info(f"[API] New session: {session_id} / {user_id}")
-    return NewSessionResponse(session_id=session_id, user_id=user_id)
+    logger.info(
+        f"[API] New session: {session_id} / {user_id} "
+        f"category={req.subject_category!r} ablation={base_ablation}"
+    )
+    return NewSessionResponse(
+        session_id=session_id,
+        user_id=user_id,
+        subject_category=req.subject_category or "",
+        ablation_config=base_ablation,
+    )
+
+
+@app.get("/api/categories")
+async def get_categories():
+    """Return available subject categories for the question picker UI."""
+    res = await get_resources()
+    return {"categories": res["cfg"].get("subject_categories", [])}
 
 @app.post("/api/upload/{session_id}")
 async def upload_file(
@@ -219,6 +254,16 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
     engine = res["engine"]
     session_mgr = res["session_manager"]
 
+    # Load session metadata to get subject_category and ablation config
+    session_meta = await session_mgr.get_session_meta(session_id) or {}
+    session_category = session_meta.get("subject_category", "")
+    try:
+        session_ablation: Dict[str, bool] = json.loads(
+            session_meta.get("ablation_config", "{}")
+        )
+    except Exception:
+        session_ablation = {}
+
     try:
         turns = await session_mgr.get_session_turns(session_id)
     except Exception:
@@ -267,9 +312,12 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
 
             try:
                 async for token, is_first_kb in engine.respond_stream(
-                    user_input, history, turn_number,
+                    user_input,
+                    history,
+                    turn_number,
                     file_context=file_context,
-                    category=category,
+                    subject_category=session_category or category,
+                    ablation=session_ablation,
                 ):
                     full_response += token
                     if is_first_kb:
@@ -318,7 +366,6 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
 @app.get("/api/profiles")
 async def get_profiles():
     """Return all user cognitive profiles (for research dashboard)."""
-    res = await get_resources()
     from ..evaluation.user_profiler import UserProfiler
     profiler = await UserProfiler.create(CONFIG_PATH)
     profiles = await profiler.build_all_profiles()
@@ -348,7 +395,7 @@ async def get_reliability():
 
     from ..metrics.reliability import compute_dimension_reliability, interpret_kappa
     rel = compute_dimension_reliability(votes_lists)
-    for dim, vals in rel.items():
+    for vals in rel.values():
         vals["interpretation"] = interpret_kappa(vals.get("fleiss_kappa"))
     return {"reliability": rel, "n_turns": len(votes_lists)}
 

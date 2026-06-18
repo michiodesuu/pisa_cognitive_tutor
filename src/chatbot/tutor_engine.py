@@ -52,6 +52,14 @@ class TutorEngine:
     graph       : NetworkX DiGraph (may be None)
     """
 
+    _ABLATION_DEFAULTS = {
+        "use_rag": True,
+        "use_hybrid_search": True,
+        "use_knowledge_graph": True,
+        "use_sanitizer": True,
+        "use_kappa_weighting": True,
+    }
+
     def __init__(self, config_path: Path, searcher, graph=None):
         self.cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.searcher = searcher
@@ -60,20 +68,45 @@ class TutorEngine:
             Path("configs/prompts/socratic_tutor.txt").read_text(encoding="utf-8").strip()
         )
         self._llm_cfg = self.cfg["chatbot_llm"]
+        # Default ablation config from model_configs.yaml; overridable per session.
+        self._ablation = {**self._ABLATION_DEFAULTS, **self.cfg.get("ablation", {})}
 
     # ── context retrieval ────────────────────────────────────────────────────
 
-    async def _retrieve_context(self, user_message: str, category: Optional[str] = None) -> tuple[str, bool]:
+    async def _retrieve_context(
+        self,
+        user_message: str,
+        subject_category: str = "",
+        ablation: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, bool]:
         """
         Returns (context_block, kb_used_flag).
-        Runs BGE-M3 search in a thread so it doesn't block the event loop.
+
+        Parameters
+        ----------
+        subject_category : str
+            Qdrant payload filter — restricts results to this subject area.
+        ablation : dict, optional
+            Per-session ablation flags that override self._ablation.
         """
+        flags = {**self._ablation, **(ablation or {})}
+
+        if not flags.get("use_rag", True):
+            logger.info("[Tutor] RAG disabled by ablation flag — skipping retrieval")
+            return "", False
+
         import asyncio
         loop = asyncio.get_event_loop()
 
         try:
             results = await loop.run_in_executor(
-                None, lambda: self.searcher.search(user_message, top_k=5, category=category)
+                None,
+                lambda: self.searcher.search(
+                    user_message,
+                    top_k=5,
+                    use_hybrid=flags.get("use_hybrid_search", True),
+                    subject_category=subject_category or None,
+                ),
             )
             vector_ctx = self.searcher.format_context_for_prompt(results)
         except Exception as e:
@@ -82,7 +115,7 @@ class TutorEngine:
             results = []
 
         graph_ctx = ""
-        if self.graph is not None and results:
+        if flags.get("use_knowledge_graph", True) and self.graph is not None and results:
             from ..ingestion.graph_rag_builder import KnowledgeGraphBuilder
             seed = results[0].get("correct_concept", user_message)
             gctx = await loop.run_in_executor(
@@ -206,22 +239,29 @@ class TutorEngine:
         history: List[Dict[str, str]],
         turn_number: int = 1,
         file_context: str = "",
-        category: Optional[str] = None,
+        subject_category: str = "",
+        ablation: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[tuple[str, bool], None]:
         """
         Async generator that yields (token, kb_used_flag) tuples.
         kb_used_flag is True only on the first token if context was retrieved.
 
-        Usage in Chainlit:
-          full_response = ""
-          async for token, kb_used in engine.respond_stream(msg, history, turn):
-              full_response += token
-              cl_msg.stream_token(token)
+        Parameters
+        ----------
+        subject_category : str
+            Restricts RAG retrieval to this subject area (e.g. "life_science").
+            Passed straight through to Qdrant payload filter.
+        ablation : dict, optional
+            Per-session ablation overrides, e.g. {"use_rag": False}.
+            Merged on top of the config-level defaults in self._ablation.
         """
-        context, kb_used = await self._retrieve_context(user_message, category=category)
+        flags = {**self._ablation, **(ablation or {})}
+        context, kb_used = await self._retrieve_context(
+            user_message, subject_category=subject_category, ablation=ablation
+        )
         messages = self._build_messages(
             user_message, history, context, turn_number,
-            file_context=file_context,     # ← ADD THIS ARGUMENT
+            file_context=file_context,
         )
 
         backend = self._llm_cfg.get("backend", "ollama")
@@ -251,8 +291,8 @@ class TutorEngine:
             yield fallback, False
             full_response = fallback
 
-        # Final sanitization pass
-        safe = _sanitize_response(full_response)
-        if safe != full_response:
-            # Log but do not re-stream (already streamed)
-            logger.warning("[Tutor] Response contained forbidden words — sanitized in log")
+        # Final sanitization pass (skipped when ablation flag use_sanitizer=False)
+        if flags.get("use_sanitizer", True):
+            safe = _sanitize_response(full_response)
+            if safe != full_response:
+                logger.warning("[Tutor] Response contained forbidden words — sanitized in log")

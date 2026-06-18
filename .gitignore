@@ -9,6 +9,7 @@ build/
 # Data (do not commit raw PDFs or student data)
 data/raw_pdfs/*.pdf
 data/vector_db/
+data/finetuning/
 data/processed_jsonl/*.jsonl
 models/
 
