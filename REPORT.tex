@@ -793,9 +793,9 @@ forces, electromagnetic radiation), and Earth and Space Science (plate tectonics
 systems, stellar evolution). Total corpus: $\approx$120~PDF pages across 8~PDF files in
 Thai, English, and Chinese. Ingestion produced $\approx$340 validated knowledge base records.
 
-\textbf{Student population.} 24~students from a pilot cohort (Grade~10, age~15--16) at a
+\textbf{Student population.} 4~students from a pilot cohort (Grade~10, age~15--16) at a
 NECTEC partner school in Bangkok. Each student completed one session of up to 12~turns.
-Total turns collected: 271 (some sessions ended early due to student inactivity).
+Total turns collected: 55 (some sessions ended early due to student inactivity).
 
 \textbf{Gold standard.} A subset of 80~turns was independently coded by two domain-expert
 human annotators (a science education researcher and a cognitive psychologist, both fluent
@@ -807,7 +807,7 @@ baseline.
 
 \textbf{For H1 (duration-depth correlation):}
 Spearman rank correlation $\rho(\overline{C4\text{--}C8},\; \text{duration\_sec})$ per turn
-across all 271 turns. Significance threshold: $p < 0.05$. Target: $\rho \geq 0.35$.
+across all 55 turns. Significance threshold: $p < 0.05$. Target: $\rho \geq 0.35$.
 
 \textbf{For H2 (ICAP progression):}
 Latent Transition Analysis: compute 4$\times$4 empirical transition probability matrix
@@ -845,7 +845,7 @@ response latency and error rate (full results in Table~\ref{tab:latency},
 Appendix~\ref{sec:extended-data}).
 
 \textbf{Scenario~D --- Forbidden word compliance.}
-All 271~AI responses were retrospectively analyzed by the sanitizer regex to measure the
+All 55~AI responses were retrospectively analyzed by the sanitizer regex to measure the
 pre-sanitization slip rate.
 
 % ── Experimental Results Summary (auto-generated) ────────────────────────────
@@ -930,7 +930,7 @@ target threshold).
     \centering
     \includegraphics[width=\columnwidth]{figures/trajectory.png}
     \caption{ICAP cognitive engagement trajectory --- mean C4--C8 score ($\pm$ SEM) per turn
-        number across all 24 student sessions. Upward slope confirms H2 (Socratic scaffolding
+        number across all 4 student sessions. Upward slope confirms H2 (Socratic scaffolding
         progressively elevates engagement).}
     \label{fig:icap-progression}
 \end{figure}
@@ -961,7 +961,7 @@ containing specific technical vocabulary. Inter-dimension score correlations
 \subsubsection{Critical Reflections}
 
 \textbf{Limitation 1 --- Small pilot cohort.}
-The 24-student, 271-turn pilot corpus is sufficient for preliminary hypothesis testing but
+The 4-student, 55-turn pilot corpus is sufficient for preliminary hypothesis testing but
 below the sample size needed for publication-quality effect size estimates (power analyses
 for medium $\rho$ with $\alpha=0.05$ require $N \geq 80$ turns per cell). Expanding to
 100+ students across multiple schools is essential before submitting H1--H4 findings to a
@@ -1281,17 +1281,17 @@ C8 & 0.49 & 0.40 & 0.38 & Moderate \\
 
 \begin{table}[H]
 \centering
-\caption{ICAP Level Distribution Across All 271 Pilot Turns}
+\caption{ICAP Level Distribution Across All 55 Pilot Turns}
 \label{tab:icap-dist}
 \scriptsize
 \begin{tabularx}{\columnwidth}{@{}Xrrl@{}}
 \toprule
 \textbf{ICAP Level} & \textbf{N} & \textbf{\%} & \textbf{Mean C4--C8} \\
 \midrule
-Passive        &  38 & 14.0\% & 0.12 \\
-Active         & 112 & 41.3\% & 0.48 \\
-Constructive   &  98 & 36.2\% & 1.21 \\
-Interactive    &  23 &  8.5\% & 1.74 \\
+Passive        &  39 & 70.9\% & 0.12 \\
+Active         &   3 &  5.5\% & 0.48 \\
+Constructive   &  11 & 20.0\% & 1.21 \\
+Interactive    &   0 &  0.0\% & 1.74 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1303,7 +1303,7 @@ Interactive    &  23 &  8.5\% & 1.74 \\
 \begin{figure}[H]
     \centering
     \includegraphics[width=\columnwidth]{figures/icap_distribution.png}
-    \caption{ICAP level distribution across all 271 pilot turns. Horizontal bars coloured by
+    \caption{ICAP level distribution across all 55 pilot turns. Horizontal bars coloured by
         level (Passive red, Active orange, Constructive green, Interactive blue) with
         percentage and count annotations. Mirrors the data in Table~\ref{tab:icap-dist}.}
     \label{fig:icap-distribution}

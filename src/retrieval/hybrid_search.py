@@ -246,7 +246,6 @@ class QdrantHybridSearch:
             results = self._client.search(
                 collection_name=self._collection_name,
                 query_vector=(self._dense_name, dense_vec),
-                query_filter=q_filter,
                 limit=k,
                 score_threshold=self._score_threshold,
                 with_payload=True,

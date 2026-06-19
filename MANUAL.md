@@ -150,7 +150,7 @@ these sections:
 |-----|---------|-------|
 | `models` | 4 models listed | Remove a model entry to run a 3-model ensemble |
 | `consensus_threshold` | `0.75` | Fraction required for non-controversial verdict |
-| `timeout_seconds` | `120` | Increase on slow GPUs |
+| `timeout_seconds` | `600` | Increase on slow GPUs |
 
 ### `qdrant`
 
@@ -238,7 +238,7 @@ npm run dev --prefix frontend
 ```
 
 Open `http://localhost:3000` in a browser. Each student session:
-- Is limited to 12 turns.
+- Is limited to 14 turns.
 - Records `user_input`, `ai_response`, `duration_sec`, `kb_context_used` per turn.
 - Is associated with a `subject_category` and `ablation_config` (set at session creation).
 

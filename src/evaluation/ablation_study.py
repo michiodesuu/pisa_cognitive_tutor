@@ -1,33 +1,89 @@
 """
 ablation_study.py
 ──────────────────
-Runs the evaluation pipeline under different configurations to test the system's
-robustness and the necessity of its components.
-
-Ablations:
-1. Base Ensemble: All 4 models.
-2. No Typhoon2: Test without the Thai-tuned model.
-3. No BGE-M3 Sparse Weights: Dense retrieval only.
-4. No GraphRAG: Vector search only.
+Analyzes the cognitive depth scores in the SQLite database grouped by 
+the ablation configuration used during the chat session.
 """
 
+import sqlite3
+import json
 import logging
+from collections import defaultdict
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-def run_ablation(config_path: Path):
-    logger.info("Starting Ablation Study...")
-    logger.info("1. Base Ensemble (Full system)")
-    # In a full run, this would invoke the analyzer pipeline with the full config
-    logger.info("2. No Typhoon2 (Evaluating without typhoon2:8b-instruct-q4_K_M)")
-    # Run analyzer without typhoon to see the drop in H4
-    logger.info("3. No BGE-M3 Sparse Weights (Dense only retrieval)")
-    # Run retrieval with sparse weight = 0.0
-    logger.info("4. No GraphRAG (Vector search only)")
-    # Run engine with GraphRAG disabled
-    logger.info("Ablation Study Framework initialized. Execute individual ablations by modifying model_configs.yaml")
+def run_ablation():
+    db_path = Path("data/chat_logs/sessions.db")
+    if not db_path.exists():
+        print("No database found at data/chat_logs/sessions.db")
+        return
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    try:
+        # Get all scores joined with session ablation config
+        cursor.execute("""
+            SELECT s.ablation_config, sc.dominant_icap
+            FROM sessions s
+            JOIN scores sc ON s.session_id = sc.session_id
+        """)
+        rows = cursor.fetchall()
+    except sqlite3.OperationalError:
+        print("No scores found. Have you run the analyzer pipeline yet?")
+        return
+    
+    if not rows:
+        print("No scored turns found in the database.")
+        return
+
+    # Group by ablation config
+    results = defaultdict(lambda: {"Passive": 0, "Active": 0, "Constructive": 0, "Interactive": 0, "Total": 0})
+    
+    for ablation_str, icap in rows:
+        try:
+            cfg = json.loads(ablation_str) if ablation_str else {}
+        except json.JSONDecodeError:
+            cfg = {}
+            
+        # Classify the experimental group
+        if not cfg or all(cfg.values()):
+            group = "Base System (All Features Enabled)"
+        elif not cfg.get("use_knowledge_graph", True):
+            group = "Ablation: No Knowledge Graph"
+        elif not cfg.get("use_rag", True):
+            group = "Ablation: Pure LLM (No RAG)"
+        elif not cfg.get("use_hybrid_search", True):
+            group = "Ablation: Dense Search Only"
+        else:
+            group = f"Custom Ablation: {cfg}"
+            
+        if icap in results[group]:
+            results[group][icap] += 1
+        results[group]["Total"] += 1
+            
+    print("\n" + "="*50)
+    print(" ABLATION STUDY RESULTS: COGNITIVE DEPTH (ICAP)")
+    print("="*50)
+    
+    for group, counts in results.items():
+        total = counts["Total"]
+        if total == 0: continue
+        
+        print(f"\n[Group]: {group}")
+        print(f"   Total Scored Turns: {total}")
+        
+        for level in ["Passive", "Active", "Constructive", "Interactive"]:
+            pct = (counts[level] / total) * 100
+            
+            # Simple terminal bar chart
+            bar_len = int(pct / 2)
+            bar = "#" * bar_len
+            print(f"   {level:>12}: {counts[level]:>3} ({pct:>4.1f}%) | {bar}")
+            
+    print("\n" + "="*50)
+    conn.close()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    run_ablation(Path("configs/model_configs.yaml"))
+    run_ablation()

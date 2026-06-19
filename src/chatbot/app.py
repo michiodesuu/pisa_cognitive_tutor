@@ -238,8 +238,8 @@ async def on_message(message: cl.Message):
         except Exception as e:
             logger.error(f"[App] Failed to record turn: {e}")
 
-    # ── Graceful conversation close after 12 turns ────────────────────────
-    if turn_number >= 12:
+    # ── Graceful conversation close after 14 turns ────────────────────────
+    if turn_number >= 14:
         await cl.Message(
             content=(
                 "We have had a rich conversation! 🎉\n"

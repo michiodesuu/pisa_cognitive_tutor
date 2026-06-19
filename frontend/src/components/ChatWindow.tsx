@@ -221,7 +221,8 @@ export default function ChatWindow({ sessionId, userId, category }: Props) {
 
   const pendingUploads = uploads.filter((u) => u.uploadProgress !== undefined);
   const readyUploads   = uploads.filter((u) => u.uploadProgress === undefined && !u.error);
-  const canSend = (input.trim() || readyUploads.length > 0) && !isStreaming && isConnected;
+  const isLimitReached = turnNumber >= 14;
+  const canSend = (input.trim() || readyUploads.length > 0) && !isStreaming && isConnected && !isLimitReached;
 
   return (
     <div
@@ -375,7 +376,7 @@ export default function ChatWindow({ sessionId, userId, category }: Props) {
           {/* Attach button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming || !isConnected}
+            disabled={isStreaming || !isConnected || isLimitReached}
             title="Attach image, PDF, CSV, or text"
             className="flex-shrink-0 flex items-center justify-center w-10 h-10
                        rounded-xl border border-[var(--border-color)] text-[var(--text-muted)]
@@ -391,10 +392,12 @@ export default function ChatWindow({ sessionId, userId, category }: Props) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isStreaming || !isConnected}
+            disabled={isStreaming || !isConnected || isLimitReached}
             rows={1}
             placeholder={
-              pendingUploads.length > 0
+              isLimitReached
+                ? "We have had a rich conversation! 🎉 Refresh to start anew."
+                : pendingUploads.length > 0
                 ? "Uploading…"
                 : "Type your answer or attach a file…"
             }

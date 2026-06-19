@@ -249,6 +249,7 @@ class AnalyzerPipeline:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/model_configs.yaml")

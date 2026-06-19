@@ -1,5 +1,8 @@
 "use client";
 import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import remarkBreaks from "remark-breaks";
+import rehypeKatex from "rehype-katex";
 import type { ChatMessage } from "@/lib/types";
 import { BookOpen } from "lucide-react";
 
@@ -30,7 +33,12 @@ export default function MessageBubble({ message }: Props) {
           }`}
       >
         <div className="prose-chat">
-          <ReactMarkdown>{message.content}</ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={[remarkMath, remarkBreaks]}
+            rehypePlugins={[rehypeKatex]}
+          >
+            {message.content}
+          </ReactMarkdown>
         </div>
 
         {/* Footer */}

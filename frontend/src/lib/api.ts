@@ -2,23 +2,51 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 const WS_URL  = process.env.NEXT_PUBLIC_WS_URL  || "ws://localhost:8001";
 
 export async function createSession(questionTopic = "") {
-  const res = await fetch(`${API_URL}/api/session/new`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question_topic: questionTopic }),
-  });
-  if (!res.ok) throw new Error("Failed to create session");
-  return res.json() as Promise<{ session_id: string; user_id: string }>;
+  try {
+    const res = await fetch(`${API_URL}/api/session/new`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "69420"
+      },
+      body: JSON.stringify({ question_topic: questionTopic }),
+    });
+
+    if (!res.ok) {
+      let errorDetail = "";
+      try {
+        const errJson = await res.json();
+        errorDetail = JSON.stringify(errJson);
+      } catch {
+        errorDetail = await res.text();
+      }
+      console.error("[createSession Error Response]:", {
+        status: res.status,
+        statusText: res.statusText,
+        detail: errorDetail,
+      });
+      throw new Error(`Failed to create session: ${res.status} - ${errorDetail}`);
+    }
+
+    return res.json() as Promise<{ session_id: string; user_id: string }>;
+  } catch (error) {
+    console.error("[createSession Exception]:", error);
+    throw error;
+  }
 }
 
 export async function getHistory(sessionId: string) {
-  const res = await fetch(`${API_URL}/api/session/${sessionId}/history`);
+  const res = await fetch(`${API_URL}/api/session/${sessionId}/history`, {
+    headers: { "ngrok-skip-browser-warning": "69420" }
+  });
   return res.json();
 }
 
 export async function getProfiles() {
   try {
-    const res = await fetch(`${API_URL}/api/profiles`);
+    const res = await fetch(`${API_URL}/api/profiles`, {
+      headers: { "ngrok-skip-browser-warning": "69420" }
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   } catch {
@@ -28,7 +56,9 @@ export async function getProfiles() {
 
 export async function getReliability() {
   try {
-    const res = await fetch(`${API_URL}/api/metrics/reliability`);
+    const res = await fetch(`${API_URL}/api/metrics/reliability`, {
+      headers: { "ngrok-skip-browser-warning": "69420" }
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   } catch {
@@ -38,7 +68,10 @@ export async function getReliability() {
 
 export async function triggerAnalyze() {
   try {
-    const res = await fetch(`${API_URL}/api/analyze`, { method: "POST" });
+    const res = await fetch(`${API_URL}/api/analyze`, {
+      method: "POST",
+      headers: { "ngrok-skip-browser-warning": "69420" }
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   } catch {
@@ -83,6 +116,7 @@ export async function uploadFile(
     xhr.onerror = () => reject(new Error("Upload network error"));
 
     xhr.open("POST", `${API_URL}/api/upload/${sessionId}`);
+    xhr.setRequestHeader("ngrok-skip-browser-warning", "69420");
     xhr.send(form);
   });
 }

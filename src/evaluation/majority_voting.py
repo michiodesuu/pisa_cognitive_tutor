@@ -146,6 +146,7 @@ class ModelEvaluator:
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
+            "format": "json",
             "options": {
                 "temperature": 0.1,
                 "num_predict": 600,
@@ -229,7 +230,7 @@ class MajorityVoter:
 
         # Run models in parallel (each is a blocking HTTP call)
         model_results: List[Dict[str, Any]] = []
-        with ThreadPoolExecutor(max_workers=len(self.models)) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             futures = {
                 executor.submit(
                     m.score, student_input, pisa_context,

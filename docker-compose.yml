@@ -70,8 +70,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8001
-      - NEXT_PUBLIC_WS_URL=ws://localhost:8001
+      - NEXT_PUBLIC_API_URL=https://dark-emus-shout.loca.lt
+      - NEXT_PUBLIC_WS_URL=wss://dark-emus-shout.loca.lt
     depends_on:
       - api
 
